@@ -1,0 +1,25 @@
+name: Java CI with Maven
+"on":
+  push:
+    branches:
+    - main
+  pull_request:
+    branches:
+    - main
+  workflow_dispatch: {}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    concurrency: "${{ github.workflow }}-${{ github.ref }}"
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+    - uses: actions/setup-java@v2
+      with:
+        distribution: adopt
+        java-version: 11
+        cache: maven
+    - name: Build
+      run: "mvn -s \"${GITHUB_WORKSPACE}/.github/workflows/maven-settings.xml\" -B ${{ (((github.event_name == 'push') || (github.event_name == 'workflow_dispatch')) && (github.ref == 'refs/heads/master')) && 'deploy' || 'package' }} --file pom.xml -Prelease,release-snapshot"
+      env:
+        GITHUB_TOKEN: "${{ github.token }}"
