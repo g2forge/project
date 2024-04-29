@@ -1,0 +1,104 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.g2forge.project</groupId>
+  <artifactId>pj-project</artifactId>
+  <packaging>pom</packaging>
+  <version>0.0.1-SNAPSHOT</version>
+  <parent>
+    <groupId>com.g2forge.alexandria</groupId>
+    <artifactId>ax-project</artifactId>
+    <version>0.0.19-SNAPSHOT</version>
+    <relativePath>../../alexandria/ax-project/pom.xml</relativePath>
+  </parent>
+  <properties>
+    <alexandria.version>0.0.19-SNAPSHOT</alexandria.version>
+    <gearbox.version>0.0.10-SNAPSHOT</gearbox.version>
+    <project.organization>g2forge</project.organization>
+    <project.name>project</project.name>
+    <project.repository>project</project.repository>
+  </properties>
+  <name>project Project</name>
+  <description>Parent project for project.</description>
+  <url>https://github.com/${project.organization}/${project.repository}/tree/${project.version}/${project.artifactId}</url>
+  <developers>
+    <developer>
+      <name>Greg Gibeling</name>
+      <email>gdgib@outlook.com</email>
+      <organization>G2 Forge</organization>
+      <organizationUrl>http://www.g2forge.com</organizationUrl>
+    </developer>
+  </developers>
+  <licenses>
+    <license>
+      <name>The Apache License, Version 2.0</name>
+      <url>https://github.com/${project.organization}/${project.repository}/blob/${project.version}/LICENSE</url>
+    </license>
+  </licenses>
+  <scm>
+    <connection>scm:git:git://github.com/${project.organization}/${project.repository}.git</connection>
+    <developerConnection>scm:git:ssh://github.com:${project.organization}/${project.repository}.git</developerConnection>
+    <url>http://github.com/${project.organization}/${project.repository}/tree/${project.version}</url>
+  </scm>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>versions-maven-plugin</artifactId>
+        <version>2.5</version>
+        <configuration>
+          <properties>
+            <properties>
+              <name>alexandria.version</name>
+              <dependencies>
+                <dependency>
+                  <groupId>com.g2forge.alexandria</groupId>
+                  <artifactId>alexandria</artifactId>
+                </dependency>
+              </dependencies>
+            </properties>
+            <properties>
+              <name>gearbox.version</name>
+              <dependencies>
+                <dependency>
+                  <artifactId>gearbox</artifactId>
+                </dependency>
+              </dependencies>
+            </properties>
+          </properties>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+  <profiles>
+    <profile>
+      <id>release-snapshot</id>
+      <repositories>
+        <repository>
+          <id>github-</id>
+          <url>https://maven.pkg.github.com/g2forge/*</url>
+          <releases>
+            <enabled>true</enabled>
+          </releases>
+          <snapshots>
+            <enabled>true</enabled>
+          </snapshots>
+        </repository>
+      </repositories>
+      <distributionManagement>
+        <repository>
+          <id>github</id>
+          <name>GitHub g2forge Apache Maven Packages</name>
+          <url>https://maven.pkg.github.com/g2forge/project</url>
+        </repository>
+      </distributionManagement>
+      <distributionManagement>
+        <snapshotRepository>
+          <id>github</id>
+          <name>GitHub g2forge Apache Maven Packages</name>
+          <url>https://maven.pkg.github.com/g2forge/project</url>
+        </snapshotRepository>
+      </distributionManagement>
+    </profile>
+  </profiles>
+</project>
