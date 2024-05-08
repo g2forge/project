@@ -4,22 +4,25 @@
 	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 
-	<artifactId>project</artifactId>
-	<packaging>pom</packaging>
+	<artifactId>pj-create</artifactId>
 
 	<parent>
 		<groupId>com.g2forge.project</groupId>
 		<artifactId>pj-project</artifactId>
 		<version>0.0.1-SNAPSHOT</version>
-		<relativePath>pj-project/pom.xml</relativePath>
+		<relativePath>../pj-project/pom.xml</relativePath>
 	</parent>
 
-	<name>project</name>
-	<description>Project planning tools</description>
-
-	<modules>
-		<module>pj-project</module>
-		<module>pj-create</module>
-		<module>pj-plan</module>
-	</modules>
+	<dependencies>
+		<dependency>
+			<groupId>com.g2forge.gearbox</groupId>
+			<artifactId>gb-argparse</artifactId>
+			<version>${gearbox.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>com.g2forge.gearbox</groupId>
+			<artifactId>gb-jira</artifactId>
+			<version>${gearbox.version}</version>
+		</dependency>
+	</dependencies>
 </project>
