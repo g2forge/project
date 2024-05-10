@@ -30,7 +30,6 @@ import com.atlassian.jira.rest.client.api.domain.input.FieldInput;
 import com.atlassian.jira.rest.client.api.domain.input.IssueInputBuilder;
 import com.atlassian.jira.rest.client.api.domain.input.LinkIssuesInput;
 import com.fasterxml.jackson.core.JsonParseException;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
@@ -296,6 +295,6 @@ public class Create implements IStandardCommand {
 
 	protected CreateConfig load(final InputStream stream) throws IOException, JsonParseException, JsonMappingException {
 		final ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
-		return mapper.readValue(stream, new TypeReference<CreateConfig>() {});
+		return mapper.readValue(stream, CreateConfig.class);
 	}
 }

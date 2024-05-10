@@ -12,6 +12,10 @@
 		<version>0.0.1-SNAPSHOT</version>
 		<relativePath>../pj-project/pom.xml</relativePath>
 	</parent>
+	
+	<properties>
+		<poi.version>5.2.5</poi.version>
+	</properties>
 
 	<dependencies>
 		<dependency>
@@ -23,6 +27,17 @@
 			<groupId>com.g2forge.gearbox</groupId>
 			<artifactId>gb-jira</artifactId>
 			<version>${gearbox.version}</version>
+		</dependency>
+
+		<dependency>
+			<groupId>org.apache.poi</groupId>
+			<artifactId>poi</artifactId>
+			<version>${poi.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.poi</groupId>
+			<artifactId>poi-ooxml</artifactId>
+			<version>${poi.version}</version>
 		</dependency>
 	</dependencies>
 </project>
