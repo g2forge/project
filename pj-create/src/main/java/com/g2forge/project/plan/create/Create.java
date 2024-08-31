@@ -237,7 +237,14 @@ public class Create implements IStandardCommand {
 			for (CreateIssue issue : changes.getIssues()) {
 				final IssueInputBuilder builder = new IssueInputBuilder(issue.getProject(), 0l);
 				builder.setFieldInput(new FieldInput(IssueFieldId.ISSUE_TYPE_FIELD, ComplexIssueInputFieldValue.with("name", issue.getType())));
-				if (issue.getEpic() != null) builder.setFieldInput(new FieldInput("customfield_10000", issue.getEpic()));
+
+				if ("Epic".equals(issue.getType())) {
+					// Name epics the same as their summary
+					builder.setFieldInput(new FieldInput("customfield_10002", issue.getSummary()));
+				} else {
+					if (issue.getEpic() != null) builder.setFieldInput(new FieldInput("customfield_10000", issue.getEpic()));
+				}
+
 				if (issue.getSecurityLevel() != null) builder.setFieldInput(new FieldInput("security", ComplexIssueInputFieldValue.with("name", issue.getSecurityLevel())));
 				builder.setSummary(issue.getSummary());
 				builder.setDescription(issue.getDescription());
