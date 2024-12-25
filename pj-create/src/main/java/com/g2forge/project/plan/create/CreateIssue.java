@@ -3,6 +3,7 @@ package com.g2forge.project.plan.create;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -54,7 +55,7 @@ public class CreateIssue implements ICreateConfig {
 		retVal.epic(IFunction1.create(ICreateConfig::getEpic).applyWithFallback(this, config));
 
 		// Only add the components from the config if it's the same project (or we have no project)
-		if ((getProject() == null) || getProject().equals(config.getProject())) retVal.components(Stream.of(this, config).map(ICreateConfig::getComponents).flatMap(l -> l == null ? Stream.empty() : l.stream()).collect(Collectors.toSet()));
+		retVal.components(Stream.of(this, (getProject() == null) || getProject().equals(config.getProject()) ? config : null).filter(Objects::nonNull).map(ICreateConfig::getComponents).flatMap(l -> l == null ? Stream.empty() : l.stream()).collect(Collectors.toSet()));
 
 		retVal.labels(Stream.of(this, config).map(ICreateConfig::getLabels).flatMap(l -> l == null ? Stream.empty() : l.stream()).collect(Collectors.toSet()));
 		retVal.securityLevel(IFunction1.create(ICreateConfig::getSecurityLevel).applyWithFallback(this, config));
