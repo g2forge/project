@@ -7,6 +7,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.g2forge.alexandria.java.function.IFunction1;
 
 import lombok.AllArgsConstructor;
@@ -41,6 +42,9 @@ public class CreateIssue implements ICreateConfig {
 	@Singular
 	protected final Map<String, Set<String>> relationships;
 
+	@Singular
+	protected final Set<String> flags;
+
 	public CreateIssue fallback(CreateConfig config) {
 		final CreateIssueBuilder retVal = builder();
 
@@ -68,5 +72,10 @@ public class CreateIssue implements ICreateConfig {
 		if (getRelationships() != null) retVal.relationships(getRelationships());
 
 		return retVal.build();
+	}
+
+	@JsonIgnore
+	public boolean isEnabled(CreateConfig config) {
+		return (getFlags() == null) || !getFlags().stream().anyMatch(config.getDisabledFlags()::contains);
 	}
 }
