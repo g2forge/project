@@ -158,7 +158,8 @@ public class Create implements IStandardCommand {
 
 	protected static Changes computeChanges(CreateConfig config) {
 		final Changes.ChangesBuilder retVal = Changes.builder();
-		for (CreateIssue raw : config.getIssues()) {
+		final Set<String> disabledSummaries = config.getDisabledIssues().stream().map(CreateIssue::getSummary).collect(Collectors.toSet());
+		for (CreateIssue raw : config.getEnabledIssues()) {
 			// Integrate the configuration into the issue & record it 
 			final CreateIssue issue = raw.fallback(config);
 			retVal.issue(issue);
@@ -166,7 +167,7 @@ public class Create implements IStandardCommand {
 			// Record all the links
 			for (String relationship : issue.getRelationships().keySet()) {
 				for (String target : issue.getRelationships().get(relationship)) {
-					retVal.link(new LinkIssuesInput(issue.getSummary(), target, relationship, null));
+					if (!disabledSummaries.contains(target)) retVal.link(new LinkIssuesInput(issue.getSummary(), target, relationship, null));
 				}
 			}
 		}
@@ -201,8 +202,10 @@ public class Create implements IStandardCommand {
 		final CreateConfig config = load(stream);
 		if ((config.getIssues() == null) || config.getIssues().isEmpty()) return Collections.emptyList();
 
+		config.validateFlags();
 		final Changes changes = computeChanges(config);
 		verifyChanges(changes);
+		//return changes.getIssues().stream().map(CreateIssue::getSummary).collect(Collectors.toList());
 		return implementChanges(changes);
 	}
 
