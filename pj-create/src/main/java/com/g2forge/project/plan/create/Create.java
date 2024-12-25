@@ -202,6 +202,7 @@ public class Create implements IStandardCommand {
 		final CreateConfig config = load(stream);
 		if ((config.getIssues() == null) || config.getIssues().isEmpty()) return Collections.emptyList();
 
+		config.validateFlags();
 		final Changes changes = computeChanges(config);
 		verifyChanges(changes);
 		//return changes.getIssues().stream().map(CreateIssue::getSummary).collect(Collectors.toList());
