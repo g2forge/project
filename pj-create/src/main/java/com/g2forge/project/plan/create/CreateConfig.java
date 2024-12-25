@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.g2forge.alexandria.java.core.helpers.HCollection;
@@ -63,7 +64,7 @@ public class CreateConfig implements ICreateConfig {
 	}
 
 	public void validateFlags() {
-		final Set<String> referencedFlags = getIssues().stream().flatMap(issue -> issue.getFlags().stream()).collect(Collectors.toSet());
+		final Set<String> referencedFlags = getIssues().stream().flatMap(issue -> issue.getFlags() == null ? Stream.empty() : issue.getFlags().stream()).collect(Collectors.toSet());
 		final Set<String> unknownFlags = HCollection.difference(referencedFlags, getSpecifiedFlags().keySet());
 		if (!unknownFlags.isEmpty()) throw new IllegalArgumentException("The following flags are refenced by issues, but are neither enabled nor disabled: " + unknownFlags.stream().collect(HCollector.joining(", ", ", & ")));
 	}
