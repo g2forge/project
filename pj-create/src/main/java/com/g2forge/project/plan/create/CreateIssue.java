@@ -52,7 +52,10 @@ public class CreateIssue implements ICreateConfig {
 		retVal.project(IFunction1.create(ICreateConfig::getProject).applyWithFallback(this, config));
 		retVal.type(IFunction1.create(ICreateConfig::getType).applyWithFallback(this, config));
 		retVal.epic(IFunction1.create(ICreateConfig::getEpic).applyWithFallback(this, config));
-		retVal.components(Stream.of(this, config).map(ICreateConfig::getComponents).flatMap(l -> l == null ? Stream.empty() : l.stream()).collect(Collectors.toSet()));
+
+		// Only add the components from the config if it's the same project (or we have no project)
+		if ((getProject() == null) || getProject().equals(config.getProject())) retVal.components(Stream.of(this, config).map(ICreateConfig::getComponents).flatMap(l -> l == null ? Stream.empty() : l.stream()).collect(Collectors.toSet()));
+
 		retVal.labels(Stream.of(this, config).map(ICreateConfig::getLabels).flatMap(l -> l == null ? Stream.empty() : l.stream()).collect(Collectors.toSet()));
 		retVal.securityLevel(IFunction1.create(ICreateConfig::getSecurityLevel).applyWithFallback(this, config));
 		retVal.assignee(IFunction1.create(ICreateConfig::getAssignee).applyWithFallback(this, config));
