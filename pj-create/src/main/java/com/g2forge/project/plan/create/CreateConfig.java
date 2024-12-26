@@ -9,6 +9,7 @@ import java.util.stream.Stream;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.g2forge.alexandria.java.core.helpers.HCollection;
 import com.g2forge.alexandria.java.core.helpers.HCollector;
+import com.g2forge.alexandria.java.core.helpers.HMap;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -47,7 +48,7 @@ public class CreateConfig implements ICreateConfig {
 
 	@Getter(lazy = true)
 	@JsonIgnore
-	private final Map<String, Boolean> specifiedFlags = getFlags().entrySet().stream().filter(entry -> entry.getValue() != null).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+	private final Map<String, Boolean> specifiedFlags = getFlags() == null ? HMap.empty() : getFlags().entrySet().stream().filter(entry -> entry.getValue() != null).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
 
 	@Getter(lazy = true)
 	@JsonIgnore
