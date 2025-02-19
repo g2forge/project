@@ -17,7 +17,7 @@ import lombok.Data;
 import lombok.Singular;
 
 @Data
-@Builder
+@Builder(toBuilder = true)
 @AllArgsConstructor
 public class CreateIssue implements ICreateConfig {
 	protected final String project;
@@ -33,6 +33,8 @@ public class CreateIssue implements ICreateConfig {
 	protected final String description;
 
 	protected final String assignee;
+
+	protected final Integer sprint;
 
 	@Singular
 	protected final Set<String> components;
@@ -53,6 +55,7 @@ public class CreateIssue implements ICreateConfig {
 		retVal.project(IFunction1.create(ICreateConfig::getProject).applyWithFallback(this, config));
 		retVal.type(IFunction1.create(ICreateConfig::getType).applyWithFallback(this, config));
 		retVal.epic(IFunction1.create(ICreateConfig::getEpic).applyWithFallback(this, config));
+		retVal.sprint(IFunction1.create(ICreateConfig::getSprint).applyWithFallback(this, config));
 
 		// Only add the components from the config if it's the same project (or we have no project)
 		retVal.components(Stream.of(this, (getProject() == null) || getProject().equals(config.getProject()) ? config : null).filter(Objects::nonNull).map(ICreateConfig::getComponents).flatMap(l -> l == null ? Stream.empty() : l.stream()).collect(Collectors.toSet()));

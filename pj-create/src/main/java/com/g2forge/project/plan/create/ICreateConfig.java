@@ -14,6 +14,8 @@ public interface ICreateConfig {
 
 	public String getAssignee();
 
+	public Integer getSprint();
+
 	public Set<String> getComponents();
 
 	public Set<String> getLabels();
