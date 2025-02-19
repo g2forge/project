@@ -4,8 +4,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintStream;
 import java.net.URISyntaxException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -37,9 +35,14 @@ import com.g2forge.alexandria.command.command.IStandardCommand;
 import com.g2forge.alexandria.command.exit.IExit;
 import com.g2forge.alexandria.command.invocation.CommandInvocation;
 import com.g2forge.alexandria.java.core.error.HError;
+import com.g2forge.alexandria.java.io.dataaccess.IDataSource;
+import com.g2forge.alexandria.java.io.dataaccess.PathDataSource;
+import com.g2forge.alexandria.java.type.ref.ITypeRef;
 import com.g2forge.alexandria.log.HLog;
 import com.g2forge.gearbox.jira.ExtendedJiraRestClient;
 import com.g2forge.gearbox.jira.JIRAServer;
+import com.g2forge.project.plan.create.CreateIssue.CreateIssueBuilder;
+import com.g2forge.project.plan.create.field.KnownField;
 
 import io.atlassian.util.concurrent.Promise;
 import lombok.AllArgsConstructor;
@@ -156,17 +159,26 @@ public class Create implements IStandardCommand {
 
 	protected static final Pattern PATTERN_KEY = Pattern.compile("([A-Z0-9]{2,5}-[0-9]+)(\\s.*)?");
 
-	protected static Changes computeChanges(CreateConfig config) {
+	protected static Changes computeChanges(Server server, CreateConfig config) {
+		final int sprintOffset = (((server == null) || (server.getSprintOffset() == null)) ? 0 : server.getSprintOffset()) + ((config.getSprintOffset() == null) ? 0 : config.getSprintOffset());
 		final Changes.ChangesBuilder retVal = Changes.builder();
 		for (CreateIssue raw : config.getIssues()) {
-			// Integrate the configuration into the issue & record it 
-			final CreateIssue issue = raw.fallback(config);
-			retVal.issue(issue);
+			// Integrate the configuration into the issue & record it
+			final CreateIssue issueWithFallback = raw.fallback(config);
+			final CreateIssue issueWithServer;
+			{
+				final CreateIssueBuilder builder = issueWithFallback.toBuilder();
+				if (sprintOffset != 0) builder.sprint(issueWithFallback.getSprint() + sprintOffset);
+				if ((server != null) && (server.getUsers() != null)) builder.assignee(server.getUsers().getOrDefault(issueWithFallback.getAssignee(), issueWithFallback.getAssignee()));
+				issueWithServer = builder.build();
+			}
+
+			retVal.issue(issueWithServer);
 
 			// Record all the links
-			for (String relationship : issue.getRelationships().keySet()) {
-				for (String target : issue.getRelationships().get(relationship)) {
-					retVal.link(new LinkIssuesInput(issue.getSummary(), target, relationship, null));
+			for (String relationship : issueWithServer.getRelationships().keySet()) {
+				for (String target : issueWithServer.getRelationships().get(relationship)) {
+					retVal.link(new LinkIssuesInput(issueWithServer.getSummary(), target, relationship, null));
 				}
 			}
 		}
@@ -196,14 +208,26 @@ public class Create implements IStandardCommand {
 
 	protected final Map<String, Map<String, BasicComponent>> projectComponentsCache = new LinkedHashMap<>();
 
-	public List<String> createIssues(InputStream stream) throws JsonParseException, JsonMappingException, IOException, URISyntaxException, InterruptedException, ExecutionException {
+	public List<String> createIssues(IDataSource serverDataSource, IDataSource configDataSource) throws JsonParseException, JsonMappingException, IOException, URISyntaxException, InterruptedException, ExecutionException {
+		final ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
+
 		// Load the config, but if it's empty, don't bother
-		final CreateConfig config = load(stream);
+		final CreateConfig config;
+		try (final InputStream stream = configDataSource.getStream(ITypeRef.of(InputStream.class))) {
+			config = mapper.readValue(stream, CreateConfig.class);
+		}
 		if ((config.getIssues() == null) || config.getIssues().isEmpty()) return Collections.emptyList();
 
-		final Changes changes = computeChanges(config);
+		// Load the server if one is specified;
+		final Server server;
+		if (serverDataSource != null) try (final InputStream stream = serverDataSource.getStream(ITypeRef.of(InputStream.class))) {
+			server = mapper.readValue(stream, Server.class);
+		}
+		else server = null;
+
+		final Changes changes = computeChanges(server, config);
 		verifyChanges(changes);
-		return implementChanges(changes);
+		return implementChanges(server, changes);
 	}
 
 	protected Map<String, BasicComponent> getProjectComponents(final ExtendedJiraRestClient client, final String projectKey) {
@@ -222,9 +246,9 @@ public class Create implements IStandardCommand {
 		});
 	}
 
-	protected List<String> implementChanges(Changes changes) throws IOException, URISyntaxException, InterruptedException, ExecutionException {
+	protected List<String> implementChanges(Server server, Changes changes) throws IOException, URISyntaxException, InterruptedException, ExecutionException {
 		HLog.getLogControl().setLogLevel(Level.INFO);
-		try (final ExtendedJiraRestClient client = JIRAServer.load().connect(true)) {
+		try (final ExtendedJiraRestClient client = JIRAServer.createFromPropertyInput(server.getApi(), null).connect(true)) {
 			final Map<String, LinkType> linkTypes = new HashMap<>();
 			for (IssuelinksType linkType : client.getMetadataClient().getIssueLinkTypes().get()) {
 				linkTypes.put(linkType.getName(), new LinkType(linkType.getName(), false));
@@ -240,15 +264,16 @@ public class Create implements IStandardCommand {
 
 				if ("Epic".equals(issue.getType())) {
 					// Name epics the same as their summary
-					builder.setFieldInput(new FieldInput("customfield_10002", issue.getSummary()));
+					builder.setFieldInput(KnownField.EpicSummary.get(server).createFieldInput(issue.getSummary()));
 				} else {
-					if (issue.getEpic() != null) builder.setFieldInput(new FieldInput("customfield_10000", issue.getEpic()));
+					if (issue.getEpic() != null) builder.setFieldInput(KnownField.Parent.get(server).createFieldInput(issue.getEpic()));
 				}
 
-				if (issue.getSecurityLevel() != null) builder.setFieldInput(new FieldInput("security", ComplexIssueInputFieldValue.with("name", issue.getSecurityLevel())));
+				if (issue.getSecurityLevel() != null) builder.setFieldInput(KnownField.Security.get(server).createFieldInput(issue.getSecurityLevel()));
 				builder.setSummary(issue.getSummary());
 				builder.setDescription(issue.getDescription());
-				if (issue.getAssignee() != null) builder.setAssigneeName(issue.getAssignee());
+				if (issue.getAssignee() != null) builder.setFieldInput(KnownField.Assignee.get(server).createFieldInput(issue.getAssignee()));
+				if (issue.getSprint() != null) builder.setFieldInput(KnownField.Sprint.get(server).createFieldInput(issue.getSprint()));
 				if ((issue.getComponents() != null) && !issue.getComponents().isEmpty()) {
 					final Map<String, BasicComponent> components = getProjectComponents(client, issue.getProject());
 					builder.setFieldInput(new FieldInput(IssueFieldId.COMPONENTS_FIELD, issue.getComponents().stream().map(name -> {
@@ -292,16 +317,12 @@ public class Create implements IStandardCommand {
 
 	@Override
 	public IExit invoke(CommandInvocation<InputStream, PrintStream> invocation) throws Throwable {
-		if (invocation.getArguments().size() != 1) throw new IllegalArgumentException();
-		final Path input = Paths.get(invocation.getArguments().get(0));
-		try (final InputStream stream = Files.newInputStream(input)) {
-			createIssues(stream).forEach(System.out::println);
-		}
+		if (invocation.getArguments().size() < 1 || invocation.getArguments().size() > 2) throw new IllegalArgumentException("You must specify one or two inputs the optional path to server and the path fo the config!");
+		final boolean hasServer = invocation.getArguments().size() > 1;
+		final IDataSource server = hasServer ? new PathDataSource(Paths.get(invocation.getArguments().get(0))) : null;
+		final IDataSource config = new PathDataSource(Paths.get(invocation.getArguments().get(hasServer ? 1 : 0)));
+		createIssues(server, config).forEach(System.out::println);
 		return IStandardCommand.SUCCESS;
 	}
 
-	protected CreateConfig load(final InputStream stream) throws IOException, JsonParseException, JsonMappingException {
-		final ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
-		return mapper.readValue(stream, CreateConfig.class);
-	}
 }

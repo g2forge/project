@@ -23,6 +23,10 @@ public class CreateConfig implements ICreateConfig {
 
 	protected final String assignee;
 
+	protected final Integer sprint;
+
+	protected final Integer sprintOffset;
+
 	@Singular
 	protected final Set<String> components;
 
