@@ -250,7 +250,7 @@ public class Create implements IStandardCommand {
 
 	protected List<String> implementChanges(Server server, Changes changes) throws IOException, URISyntaxException, InterruptedException, ExecutionException {
 		HLog.getLogControl().setLogLevel(Level.INFO);
-		try (final ExtendedJiraRestClient client = JIRAServer.createFromPropertyInput(server.getApi(), null).connect(true)) {
+		try (final ExtendedJiraRestClient client = JIRAServer.createFromPropertyInput(server == null ? null : server.getApi(), null).connect(true)) {
 			final Map<String, LinkType> linkTypes = new HashMap<>();
 			for (IssuelinksType linkType : client.getMetadataClient().getIssueLinkTypes().get()) {
 				linkTypes.put(linkType.getName(), new LinkType(linkType.getName(), false));
