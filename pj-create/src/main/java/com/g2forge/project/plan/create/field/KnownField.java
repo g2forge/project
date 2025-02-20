@@ -12,7 +12,7 @@ public enum KnownField implements IField {
 	Assignee(IssueFieldId.ASSIGNEE_FIELD.id, "name"),
 	EpicSummary("customfield_10002", null),
 	Parent("customfield_10000", null),
-	Sprint("customfield_10020", null),
+	Sprint("customfield_10004", null),
 	Security("security", "name");
 
 	protected final String name;
