@@ -15,18 +15,22 @@ import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 
 import org.slf4j.event.Level;
 
 import com.atlassian.jira.rest.client.api.IssueRestClient;
 import com.atlassian.jira.rest.client.api.domain.BasicComponent;
 import com.atlassian.jira.rest.client.api.domain.BasicIssue;
+import com.atlassian.jira.rest.client.api.domain.Issue;
 import com.atlassian.jira.rest.client.api.domain.IssueFieldId;
 import com.atlassian.jira.rest.client.api.domain.IssuelinksType;
+import com.atlassian.jira.rest.client.api.domain.Transition;
 import com.atlassian.jira.rest.client.api.domain.input.ComplexIssueInputFieldValue;
 import com.atlassian.jira.rest.client.api.domain.input.FieldInput;
 import com.atlassian.jira.rest.client.api.domain.input.IssueInputBuilder;
 import com.atlassian.jira.rest.client.api.domain.input.LinkIssuesInput;
+import com.atlassian.jira.rest.client.api.domain.input.TransitionInput;
 import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -43,6 +47,7 @@ import com.g2forge.gearbox.jira.ExtendedJiraRestClient;
 import com.g2forge.gearbox.jira.JIRAServer;
 import com.g2forge.project.plan.create.CreateIssue.CreateIssueBuilder;
 import com.g2forge.project.plan.create.field.KnownField;
+import com.google.common.base.Objects;
 
 import io.atlassian.util.concurrent.Promise;
 import lombok.AllArgsConstructor;
@@ -288,22 +293,39 @@ public class Create implements IStandardCommand {
 				}
 				if ((issue.getLabels() != null) && !issue.getLabels().isEmpty()) builder.setFieldInput(new FieldInput(IssueFieldId.LABELS_FIELD, issue.getLabels()));
 
-				final List<Throwable> throwables = new ArrayList<>();
-				for (int i = 0; i < 5; i++) {
-					final Promise<BasicIssue> promise = issueClient.createIssue(builder.build());
-					final BasicIssue created;
-					try {
-						created = promise.get();
-					} catch (ExecutionException e) {
-						throwables.add(e);
-						continue;
+				BasicIssue created = null;
+				{
+					final List<Throwable> throwables = new ArrayList<>();
+					for (int i = 0; i < 5; i++) {
+						final Promise<BasicIssue> promise = issueClient.createIssue(builder.build());
+						try {
+							created = promise.get();
+						} catch (ExecutionException e) {
+							throwables.add(e);
+							continue;
+						}
+						issues.put(issue.getSummary(), created.getKey());
+						throwables.clear();
+						break;
 					}
-					issues.put(issue.getSummary(), created.getKey());
-					throwables.clear();
-					break;
+					if (!throwables.isEmpty()) HError.withSuppressed(new RuntimeException(String.format("Failed to create issue: %1$s", issue.getSummary())), throwables).printStackTrace(System.err);
 				}
-				if (!throwables.isEmpty()) {
-					HError.withSuppressed(new RuntimeException(String.format("Failed to create issue: %1$s", issue.getSummary())), throwables).printStackTrace(System.err);
+
+				final String transitionName = issue.getTransition();
+				if (transitionName != null) {
+					final List<Throwable> throwables = new ArrayList<>();
+					for (int i = 0; i < 5; i++) {
+						try {
+							final Issue actualIssue = issueClient.getIssue(created.getKey()).get();
+							final Iterable<Transition> transitions = issueClient.getTransitions(actualIssue).get();
+							final Transition transition = StreamSupport.stream(transitions.spliterator(), false).filter(t -> Objects.equal(t.getName(), transitionName)).findFirst().orElse(null);
+							issueClient.transition(actualIssue, new TransitionInput(transition.getId())).get();
+						} catch (ExecutionException e) {
+							throwables.add(e);
+							continue;
+						}
+					}
+					if (!throwables.isEmpty()) HError.withSuppressed(new RuntimeException(String.format("Failed to transition issue: %1$s %2$s", created.getKey(), issue.getSummary())), throwables).printStackTrace(System.err);
 				}
 			}
 
