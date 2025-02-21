@@ -48,7 +48,7 @@ public class CreateIssue implements ICreateConfig {
 	@Singular
 	protected final Set<String> flags;
 
-	public CreateIssue fallback(CreateConfig config) {
+	public CreateIssue fallback(ICreateConfig config) {
 		final CreateIssueBuilder retVal = builder();
 
 		// Configurable fields

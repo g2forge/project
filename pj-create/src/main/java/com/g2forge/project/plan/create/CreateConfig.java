@@ -16,11 +16,15 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.Getter;
 import lombok.Singular;
+import lombok.extern.jackson.Jacksonized;
 
 @Data
-@Builder
+@Builder(toBuilder = true)
 @AllArgsConstructor
+@Jacksonized
 public class CreateConfig implements ICreateConfig {
+	
+
 	protected final String project;
 
 	protected final String type;
@@ -31,9 +35,7 @@ public class CreateConfig implements ICreateConfig {
 
 	protected final String assignee;
 
-	protected final Integer sprint;
-
-	protected final Integer sprintOffset;
+	protected final SprintConfig sprintConfig;
 
 	@Singular
 	protected final Set<String> components;
@@ -59,13 +61,18 @@ public class CreateConfig implements ICreateConfig {
 	private final Set<String> disabledFlags = getSpecifiedFlags().entrySet().stream().filter(entry -> !entry.getValue()).map(Map.Entry::getKey).collect(Collectors.toSet());
 
 	@JsonIgnore
+	public List<CreateIssue> getDisabledIssues() {
+		return getIssues().stream().filter(issue -> !issue.isEnabled(this)).collect(Collectors.toList());
+	}
+
+	@JsonIgnore
 	public List<CreateIssue> getEnabledIssues() {
 		return getIssues().stream().filter(issue -> issue.isEnabled(this)).collect(Collectors.toList());
 	}
 
-	@JsonIgnore
-	public List<CreateIssue> getDisabledIssues() {
-		return getIssues().stream().filter(issue -> !issue.isEnabled(this)).collect(Collectors.toList());
+	@Override
+	public Integer getSprint() {
+		return getSprintConfig() == null ? null : sprintConfig.getSprint();
 	}
 
 	public void validateFlags() {
