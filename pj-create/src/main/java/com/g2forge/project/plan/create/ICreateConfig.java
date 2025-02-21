@@ -21,4 +21,6 @@ public interface ICreateConfig {
 	public Set<String> getLabels();
 
 	public Map<String, Set<String>> getRelationships();
+
+	public String getTransition();
 }

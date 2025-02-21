@@ -48,6 +48,8 @@ public class CreateIssue implements ICreateConfig {
 	@Singular
 	protected final Set<String> flags;
 
+	protected final String transition;
+
 	public CreateIssue fallback(ICreateConfig config) {
 		final CreateIssueBuilder retVal = builder();
 
@@ -77,6 +79,7 @@ public class CreateIssue implements ICreateConfig {
 		retVal.summary(getSummary());
 		retVal.description(getDescription());
 		if (getRelationships() != null) retVal.relationships(getRelationships());
+		retVal.transition(IFunction1.create(ICreateConfig::getTransition).applyWithFallback(this, config));
 
 		return retVal.build();
 	}

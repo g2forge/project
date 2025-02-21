@@ -23,8 +23,6 @@ import lombok.extern.jackson.Jacksonized;
 @AllArgsConstructor
 @Jacksonized
 public class CreateConfig implements ICreateConfig {
-	
-
 	protected final String project;
 
 	protected final String type;
@@ -51,6 +49,8 @@ public class CreateConfig implements ICreateConfig {
 
 	@Singular
 	protected final Map<String, Boolean> flags;
+	
+	protected final String transition;
 
 	@Getter(lazy = true)
 	@JsonIgnore
