@@ -160,7 +160,9 @@ public class Create implements IStandardCommand {
 	protected static final Pattern PATTERN_KEY = Pattern.compile("([A-Z0-9]{2,5}-[0-9]+)(\\s.*)?");
 
 	protected static Changes computeChanges(Server server, CreateConfig config) {
-		final int sprintOffset = (((server == null) || (server.getSprintOffset() == null)) ? 0 : server.getSprintOffset()) + ((config.getSprintOffset() == null) ? 0 : config.getSprintOffset());
+		final SprintConfig sprintWithDefault = config.getSprintConfig() == null ? SprintConfig.getDEFAULT() : config.getSprintConfig().fallback(SprintConfig.getDEFAULT());
+		final SprintConfig sprintWithOffset = ((server == null) || (server.getSprintOffset() == null)) ? sprintWithDefault : sprintWithDefault.toBuilder().offset(sprintWithDefault.getOffset() + server.getSprintOffset()).build();
+
 		final Changes.ChangesBuilder retVal = Changes.builder();
 		final Set<String> disabledSummaries = config.getDisabledIssues().stream().map(CreateIssue::getSummary).collect(Collectors.toSet());
 		for (CreateIssue raw : config.getEnabledIssues()) {
@@ -169,7 +171,7 @@ public class Create implements IStandardCommand {
 			final CreateIssue issueWithServer;
 			{
 				final CreateIssueBuilder builder = issueWithFallback.toBuilder();
-				if (sprintOffset != 0) builder.sprint(issueWithFallback.getSprint() + sprintOffset);
+				builder.sprint(sprintWithOffset.modify(issueWithFallback.getSprint()));
 				if ((server != null) && (server.getUsers() != null)) builder.assignee(server.getUsers().getOrDefault(issueWithFallback.getAssignee(), issueWithFallback.getAssignee()));
 				issueWithServer = builder.build();
 			}
