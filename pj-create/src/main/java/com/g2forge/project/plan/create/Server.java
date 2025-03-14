@@ -2,9 +2,10 @@ package com.g2forge.project.plan.create;
 
 import java.util.Map;
 
-import com.g2forge.gearbox.jira.JIRAServer;
-import com.g2forge.project.plan.create.field.Field;
-import com.g2forge.project.plan.create.field.KnownField;
+import com.g2forge.gearbox.jira.JiraAPI;
+import com.g2forge.gearbox.jira.fields.Field;
+import com.g2forge.gearbox.jira.fields.IFieldConfig;
+import com.g2forge.gearbox.jira.fields.KnownField;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -14,7 +15,7 @@ import lombok.Singular;
 @Data
 @Builder
 @AllArgsConstructor
-public class Server {
+public class Server implements IFieldConfig {
 	@Singular
 	protected final Map<KnownField, Field> fields;
 
@@ -23,5 +24,5 @@ public class Server {
 	@Singular
 	protected final Map<String, String> users;
 
-	protected final JIRAServer api;
+	protected final JiraAPI api;
 }

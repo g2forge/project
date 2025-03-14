@@ -44,9 +44,9 @@ import com.g2forge.alexandria.java.io.dataaccess.PathDataSource;
 import com.g2forge.alexandria.java.type.ref.ITypeRef;
 import com.g2forge.alexandria.log.HLog;
 import com.g2forge.gearbox.jira.ExtendedJiraRestClient;
-import com.g2forge.gearbox.jira.JIRAServer;
+import com.g2forge.gearbox.jira.JiraAPI;
+import com.g2forge.gearbox.jira.fields.KnownField;
 import com.g2forge.project.plan.create.CreateIssue.CreateIssueBuilder;
-import com.g2forge.project.plan.create.field.KnownField;
 import com.google.common.base.Objects;
 
 import io.atlassian.util.concurrent.Promise;
@@ -63,7 +63,7 @@ import lombok.Data;
  * The <code>INPUTFILE</code> must be a YAML file, which consists of a configuration one field of which is <code>issues</code>. The configuration must specify
  * at least a <code>summary</code> for each issue, and optionally more. The fields of the issues in the YAML file are documented below. The configuration can
  * also include, at the top level, an entry for any field marked "configurable" whose value will be used for any issue that does not specify a value explicitly.
- * Please see {@link JIRAServer} for information on specifying the Jira server and user account.
+ * Please see {@link JiraAPI} for information on specifying the Jira server and user account.
  * 
  * <table>
  * <caption>Create issues issue properties and their descriptions</caption> <thead>
@@ -257,7 +257,7 @@ public class Create implements IStandardCommand {
 
 	protected List<String> implementChanges(Server server, Changes changes) throws IOException, URISyntaxException, InterruptedException, ExecutionException {
 		HLog.getLogControl().setLogLevel(Level.INFO);
-		try (final ExtendedJiraRestClient client = JIRAServer.createFromPropertyInput(server == null ? null : server.getApi(), null).connect(true)) {
+		try (final ExtendedJiraRestClient client = JiraAPI.createFromPropertyInput(server == null ? null : server.getApi(), null).connect(true)) {
 			final Map<String, LinkType> linkTypes = new HashMap<>();
 			for (IssuelinksType linkType : client.getMetadataClient().getIssueLinkTypes().get()) {
 				linkTypes.put(linkType.getName(), new LinkType(linkType.getName(), false));

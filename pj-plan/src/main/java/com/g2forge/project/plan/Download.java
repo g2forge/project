@@ -22,7 +22,7 @@ import com.g2forge.alexandria.command.exit.IExit;
 import com.g2forge.alexandria.command.invocation.CommandInvocation;
 import com.g2forge.alexandria.log.HLog;
 import com.g2forge.gearbox.jira.ExtendedJiraRestClient;
-import com.g2forge.gearbox.jira.JIRAServer;
+import com.g2forge.gearbox.jira.JiraAPI;
 
 import lombok.Builder;
 import lombok.Data;
@@ -67,7 +67,7 @@ public class Download implements IStandardCommand {
 				header.createCell(1).setCellValue("Summary");
 			}
 
-			try (final ExtendedJiraRestClient client = JIRAServer.load().connect(true)) {
+			try (final ExtendedJiraRestClient client = JiraAPI.load().connect(true)) {
 				final int max = 500;
 				int base = 0, rowNum = 1;
 				while (true) {
