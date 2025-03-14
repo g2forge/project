@@ -19,14 +19,9 @@
 
 	<dependencies>
 		<dependency>
-			<groupId>com.g2forge.gearbox</groupId>
-			<artifactId>gb-argparse</artifactId>
-			<version>${gearbox.version}</version>
-		</dependency>
-		<dependency>
-			<groupId>com.g2forge.gearbox</groupId>
-			<artifactId>gb-jira</artifactId>
-			<version>${gearbox.version}</version>
+			<groupId>com.g2forge.project</groupId>
+			<artifactId>pj-core</artifactId>
+			<version>${project.version}</version>
 		</dependency>
 
 		<dependency>
