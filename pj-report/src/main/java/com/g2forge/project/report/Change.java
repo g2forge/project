@@ -48,11 +48,11 @@ public class Change {
 			// IF the status changed (not all change log groups include a chance to the status), then...
 			if ((toAssignee != null) || (toStatus != null)) {
 				if (created.isAfter(end)) {
-					if (fromAssignee != null) {
+					if (!foundFinalAssignee && (fromAssignee != null)) {
 						finalAssignee = fromAssignee;
 						foundFinalAssignee = true;
 					}
-					if (fromStatus != null) {
+					if (!foundFinalStatus && (fromStatus != null)) {
 						finalStatus = fromStatus;
 						foundFinalStatus = true;
 					}

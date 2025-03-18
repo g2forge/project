@@ -20,6 +20,7 @@ public class TestChange {
 	protected static final ZonedDateTime START_PLUS30 = ZonedDateTime.parse("2025-01-01T13:30:00-07:00[America/Los_Angeles]");
 	protected static final ZonedDateTime START_PLUS45 = ZonedDateTime.parse("2025-01-01T13:45:00-07:00[America/Los_Angeles]");
 	protected static final ZonedDateTime END_PLUS20 = ZonedDateTime.parse("2025-01-01T14:20:00-07:00[America/Los_Angeles]");
+	protected static final ZonedDateTime END_PLUS40 = ZonedDateTime.parse("2025-01-01T14:40:00-07:00[America/Los_Angeles]");
 
 	protected ChangelogGroup changeAssignee(ZonedDateTime when, String fromAssignee, String toAssignee) {
 		return new ChangelogGroup(null, Billing.convert(when), HCollection.asList(new ChangelogItem(null, KnownField.Assignee.getName(), fromAssignee, fromAssignee, toAssignee, toAssignee)));
@@ -32,6 +33,12 @@ public class TestChange {
 	@Test
 	public void testToChangesAllAfter() {
 		final List<Change> actual = Change.toChanges(HCollection.asList(changeStatus(END_PLUS20, "State", "Ignored")), START, END, "user", "Ignored", IFunction1.identity());
+		HAssert.assertEquals(HCollection.asList(new Change(START, "user", "State"), new Change(END, "user", "State")), actual);
+	}
+
+	@Test
+	public void testToChangesDoubleAfter() {
+		final List<Change> actual = Change.toChanges(HCollection.asList(changeStatus(END_PLUS20, "State", "Ignored1"), changeStatus(END_PLUS40, "Ignored1", "Ignored2")), START, END, "user", "Ignored", IFunction1.identity());
 		HAssert.assertEquals(HCollection.asList(new Change(START, "user", "State"), new Change(END, "user", "State")), actual);
 	}
 

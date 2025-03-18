@@ -8,7 +8,6 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -45,7 +44,6 @@ import com.g2forge.gearbox.argparse.ArgumentParser;
 import com.g2forge.gearbox.jira.ExtendedJiraRestClient;
 import com.g2forge.gearbox.jira.JiraAPI;
 import com.g2forge.project.core.HConfig;
-import com.g2forge.project.report.Billing.Bill.Key;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -63,63 +61,6 @@ public class Billing implements IStandardCommand {
 		protected final String issueKey;
 
 		protected final Path request;
-	}
-
-	protected static Map<String, Double> computeBillableHoursByUser(List<Change> changes, IPredicate1<String> isStatusBillable, IFunction1<? super String, ? extends WorkingHours> workingHoursFunction) {
-		final Map<String, Double> retVal = new TreeMap<>();
-		for (int i = 0; i < changes.size() - 1; i++) {
-			final Change change = changes.get(i);
-			if (!isStatusBillable.test(change.getStatus())) continue;
-			final WorkingHours workingHours = workingHoursFunction.apply(change.getAssignee());
-			final Double billable = workingHours.computeBillableHours(change.getStart(), changes.get(i + 1).getStart());
-			if (billable < 0) throw new UnreachableCodeError();
-			if (billable > 0) {
-				final Double previous = retVal.get(change.getAssignee());
-				retVal.put(change.getAssignee(), (previous == null ? 0.0 : previous) + billable);
-			}
-		}
-		return retVal;
-	}
-
-	public static ZonedDateTime convert(DateTime dateTime) {
-		final Instant instant = Instant.ofEpochMilli(dateTime.getMillis());
-		final ZoneId zoneId = ZoneId.of(dateTime.getZone().getID(), ZoneId.SHORT_IDS);
-		return ZonedDateTime.ofInstant(instant, zoneId);
-	}
-
-	public static DateTime convert(ZonedDateTime zonedDateTime) {
-		final long millis = zonedDateTime.toInstant().toEpochMilli();
-		final DateTimeZone dateTimeZone = DateTimeZone.forID(zonedDateTime.getZone().getId());
-		return new DateTime(millis, dateTimeZone);
-	}
-
-	public static void main(String[] args) throws Throwable {
-		IStandardCommand.main(args, new Billing());
-	}
-
-	protected final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy/MM/dd");
-
-	protected List<Change> computeChanges(ExtendedJiraRestClient client, String issueKey, ZonedDateTime start, ZonedDateTime end) throws InterruptedException, ExecutionException {
-		final Issue issue = client.getIssueClient().getIssue(issueKey, HCollection.asList(IssueRestClient.Expandos.CHANGELOG)).get();
-		final Iterable<ChangelogGroup> changelog = issue.getChangelog();
-		final Cache<String, String> users = new Cache<>(id -> {
-			if (id == null) return null;
-			try {
-				return client.getUserClient().getUserByKey(id).get().getName();
-			} catch (InterruptedException | ExecutionException e) {
-				throw new RuntimeException("Failed to look up user: " + id, e);
-			}
-		}, NeverCacheEvictionPolicy.create());
-		return Change.toChanges(changelog, start, end, issue.getAssignee().getName(), issue.getStatus().getName(), users);
-	}
-
-	protected List<Issue> findRelevantIssues(ExtendedJiraRestClient client, Collection<? extends String> users, LocalDate start, LocalDate end) throws InterruptedException, ExecutionException {
-		final List<Issue> retVal = new ArrayList<>();
-		for (String user : users) {
-			final SearchResult result = client.getSearchClient().searchJql(String.format("issuekey IN updatedBy(%1$s, \"%2$s\", \"%3$s\")", user, start.format(DATE_FORMAT), end.format(DATE_FORMAT))).get();
-			retVal.addAll(HCollection.asList(result.getIssues()));
-		}
-		return retVal;
 	}
 
 	@Data
@@ -180,10 +121,6 @@ public class Billing implements IStandardCommand {
 			return getAmounts().keySet().stream().map(Key::getComponent).collect(Collectors.toSet());
 		}
 
-		public Set<String> getUsers() {
-			return getAmounts().keySet().stream().map(Key::getUser).collect(Collectors.toSet());
-		}
-
 		public Set<String> getIssues() {
 			return getAmounts().keySet().stream().map(Key::getIssue).collect(Collectors.toSet());
 		}
@@ -191,6 +128,76 @@ public class Billing implements IStandardCommand {
 		public double getTotal() {
 			return getAmounts().values().stream().mapToDouble(Double::doubleValue).sum();
 		}
+
+		public Set<String> getUsers() {
+			return getAmounts().keySet().stream().map(Key::getUser).collect(Collectors.toSet());
+		}
+	}
+
+	protected static Map<String, Double> computeBillableHoursByUser(List<Change> changes, IPredicate1<String> isStatusBillable, IFunction1<? super String, ? extends WorkingHours> workingHoursFunction) {
+		final Map<String, Double> retVal = new TreeMap<>();
+		for (int i = 0; i < changes.size() - 1; i++) {
+			final Change change = changes.get(i);
+			if (!isStatusBillable.test(change.getStatus())) continue;
+			final WorkingHours workingHours = workingHoursFunction.apply(change.getAssignee());
+			final Double billable = workingHours.computeBillableHours(change.getStart(), changes.get(i + 1).getStart());
+			if (billable < 0) throw new UnreachableCodeError();
+			if (billable > 0) {
+				final Double previous = retVal.get(change.getAssignee());
+				retVal.put(change.getAssignee(), (previous == null ? 0.0 : previous) + billable);
+			}
+		}
+		return retVal;
+	}
+
+	public static ZonedDateTime convert(DateTime dateTime) {
+		final Instant instant = Instant.ofEpochMilli(dateTime.getMillis());
+		final ZoneId zoneId = ZoneId.of(dateTime.getZone().getID(), ZoneId.SHORT_IDS);
+		return ZonedDateTime.ofInstant(instant, zoneId);
+	}
+
+	public static DateTime convert(ZonedDateTime zonedDateTime) {
+		final long millis = zonedDateTime.toInstant().toEpochMilli();
+		final DateTimeZone dateTimeZone = DateTimeZone.forID(zonedDateTime.getZone().getId());
+		return new DateTime(millis, dateTimeZone);
+	}
+
+	public static void main(String[] args) throws Throwable {
+		IStandardCommand.main(args, new Billing());
+	}
+
+	protected final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy/MM/dd");
+
+	protected List<Change> computeChanges(ExtendedJiraRestClient client, String issueKey, ZonedDateTime start, ZonedDateTime end) throws InterruptedException, ExecutionException {
+		final Issue issue = client.getIssueClient().getIssue(issueKey, HCollection.asList(IssueRestClient.Expandos.CHANGELOG)).get();
+		final Iterable<ChangelogGroup> changelog = issue.getChangelog();
+		final Cache<String, String> users = new Cache<>(id -> {
+			if (id == null) return null;
+			try {
+				return client.getUserClient().getUserByKey(id).get().getName();
+			} catch (InterruptedException | ExecutionException e) {
+				throw new RuntimeException("Failed to look up user: " + id, e);
+			}
+		}, NeverCacheEvictionPolicy.create());
+		return Change.toChanges(changelog, start, end, issue.getAssignee().getName(), issue.getStatus().getName(), users);
+	}
+
+	protected List<Issue> findRelevantIssues(ExtendedJiraRestClient client, Collection<? extends String> users, LocalDate start, LocalDate end) throws InterruptedException, ExecutionException {
+		final List<Issue> retVal = new ArrayList<>();
+		for (String user : users) {
+			final String jql = String.format("issuekey IN updatedBy(%1$s, \"%2$s\", \"%3$s\")", user, start.format(DATE_FORMAT), end.format(DATE_FORMAT));
+			final int max = 500;
+			int base = 0;
+			while (true) {
+				final SearchResult searchResult = client.getSearchClient().searchJql(jql, max, base, null).get();
+				log.info("Got issues {} to {} of {}", base, base + Math.min(searchResult.getMaxResults(), searchResult.getTotal() - base), searchResult.getTotal());
+
+				retVal.addAll(HCollection.asList(searchResult.getIssues()));
+				if ((base + max) >= searchResult.getTotal()) break;
+				else base += max;
+			}
+		}
+		return retVal;
 	}
 
 	@Override
@@ -207,9 +214,9 @@ public class Billing implements IStandardCommand {
 			for (Issue issue : relevantIssues) {
 				final Set<String> components = HCollection.asList(issue.getComponents()).stream().map(BasicComponent::getName).collect(Collectors.toSet());
 				final Set<String> billableComponents = HCollection.intersection(components, request.getBillableComponents());
+				if (billableComponents.isEmpty()) continue;
 
-				// TODO: REMOVE TIME DELTA
-				final List<Change> changes = computeChanges(client, issue.getKey(), request.getStart().atStartOfDay(ZoneId.systemDefault()), request.getEnd().atStartOfDay(ZoneId.systemDefault()).plus(5, ChronoUnit.DAYS));
+				final List<Change> changes = computeChanges(client, issue.getKey(), request.getStart().atStartOfDay(ZoneId.systemDefault()), request.getEnd().atStartOfDay(ZoneId.systemDefault()));
 				final Map<String, Double> billableHoursByUser = computeBillableHoursByUser(changes, status -> request.getBillableStatuses().contains(status), request.getUsers()::get);
 				final Map<String, Double> billableHoursByUserDividedByComponents = billableHoursByUser.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue() / billableComponents.size()));
 				for (String billableComponent : billableComponents) {
@@ -230,6 +237,7 @@ public class Billing implements IStandardCommand {
 				}
 			}
 		}
+
 		// TODO: Report on any times where a person was not billing to anything, but was working
 		// TODO: Report on any times an issue changed status outside working hours
 

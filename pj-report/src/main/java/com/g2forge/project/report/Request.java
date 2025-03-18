@@ -22,7 +22,7 @@ public class Request {
 
 	@Singular
 	protected final Set<String> billableStatuses;
-	
+
 	@Singular
 	protected final Set<String> billableComponents;
 
