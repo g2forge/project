@@ -1,17 +1,20 @@
 package com.g2forge.project.report;
 
-import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintStream;
-import java.net.URISyntaxException;
 import java.nio.file.Path;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.ExecutionException;
-import java.util.stream.Collectors;
 
+import org.joda.time.DateTime;
+import org.joda.time.DateTimeZone;
 import org.slf4j.event.Level;
 
 import com.atlassian.jira.rest.client.api.IssueRestClient;
@@ -22,7 +25,6 @@ import com.atlassian.jira.rest.client.api.domain.SearchResult;
 import com.g2forge.alexandria.command.command.IStandardCommand;
 import com.g2forge.alexandria.command.exit.IExit;
 import com.g2forge.alexandria.command.invocation.CommandInvocation;
-import com.g2forge.alexandria.java.adt.name.IStringNamed;
 import com.g2forge.alexandria.java.core.helpers.HCollection;
 import com.g2forge.alexandria.java.core.helpers.HCollector;
 import com.g2forge.alexandria.java.io.dataaccess.PathDataSource;
@@ -36,12 +38,11 @@ import com.g2forge.project.core.HConfig;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 public class Billing implements IStandardCommand {
-	protected final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy/MM/dd");
-
 	@Data
 	@Builder(toBuilder = true)
 	@AllArgsConstructor
@@ -51,32 +52,78 @@ public class Billing implements IStandardCommand {
 		protected final Path request;
 	}
 
+	@Data
+	@Builder(toBuilder = true)
+	@RequiredArgsConstructor
+	protected static class StatusChange {
+		protected final ZonedDateTime start;
+
+		protected final String status;
+	}
+
+	public static ZonedDateTime convert(DateTime dateTime) {
+		final Instant instant = Instant.ofEpochMilli(dateTime.getMillis());
+		final ZoneId zoneId = ZoneId.of(dateTime.getZone().getID(), ZoneId.SHORT_IDS);
+		return ZonedDateTime.ofInstant(instant, zoneId);
+	}
+
+	public static DateTime convert(ZonedDateTime zonedDateTime) {
+		final long millis = zonedDateTime.toInstant().toEpochMilli();
+		final DateTimeZone dateTimeZone = DateTimeZone.forID(zonedDateTime.getZone().getId());
+		return new DateTime(millis, dateTimeZone);
+	}
+
+	protected static List<StatusChange> convertToStatusChanges(final Iterable<ChangelogGroup> changelog, ZonedDateTime start, ZonedDateTime end, String status) {
+		final List<StatusChange> retVal = new ArrayList<>();
+		String finalStatus = status;
+		for (ChangelogGroup changelogGroup : changelog) {
+			final ZonedDateTime created = convert(changelogGroup.getCreated());
+			// Ignore changes before the start, and stop processing after the end
+			if (created.isBefore(start)) continue;
+
+			// Extract the from and to status from any changes to the status field (take the last change if there are multiple which should never happen)
+			String fromStatus = null, toStatus = null;
+			for (ChangelogItem changelogItem : changelogGroup.getItems()) {
+				if (!KnownField.Status.getName().equals(changelogItem.getField())) continue;
+				fromStatus = changelogItem.getFromString();
+				toStatus = changelogItem.getToString();
+			}
+
+			// IF the status changed (not all change log groups include a chance to the status), then...
+			if (toStatus != null) {
+				if (created.isAfter(end)) {
+					finalStatus = fromStatus;
+					break;
+				}
+
+				// If this is the first change, record the starting statu
+				if (retVal.isEmpty()) retVal.add(new StatusChange(start, fromStatus));
+				retVal.add(new StatusChange(created, toStatus));
+			}
+		}
+		// Add a start marker if we didn't get a chance to already
+		if (retVal.isEmpty()) retVal.add(new StatusChange(start, finalStatus));
+		// Add an end marker if we didn't get a chance at exactly the right time
+		if (!retVal.get(retVal.size() - 1).getStart().isEqual(end)) retVal.add(new StatusChange(end, finalStatus));
+		return retVal;
+	}
+
 	public static void main(String[] args) throws Throwable {
 		IStandardCommand.main(args, new Billing());
 	}
 
-	protected void demoLogChanges(ExtendedJiraRestClient client, final String issueKey) throws InterruptedException, ExecutionException, IOException, URISyntaxException {
-		final Set<String> fields = HCollection.asList(KnownField.Status).stream().map(IStringNamed::getName).collect(Collectors.toSet());
+	protected final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy/MM/dd");
+
+	protected List<StatusChange> computeStatusChanges(ExtendedJiraRestClient client, String issueKey, ZonedDateTime start, ZonedDateTime end) throws InterruptedException, ExecutionException {
 		final Issue issue = client.getIssueClient().getIssue(issueKey, HCollection.asList(IssueRestClient.Expandos.CHANGELOG)).get();
-		log.info("Created at {}", issue.getCreationDate());
-		for (ChangelogGroup changelogGroup : issue.getChangelog()) {
-			boolean printedGroupLabel = false;
-			for (ChangelogItem changelogItem : changelogGroup.getItems()) {
-				if ((fields == null) || fields.contains(changelogItem.getField())) {
-					if (!printedGroupLabel) {
-						log.info("{} {}", changelogGroup.getCreated(), changelogGroup.getAuthor().getDisplayName());
-						printedGroupLabel = true;
-					}
-					log.info("\t{}: {} -> {}", changelogItem.getField(), changelogItem.getFromString(), changelogItem.getToString());
-				}
-			}
-		}
+		final Iterable<ChangelogGroup> changelog = issue.getChangelog();
+		return convertToStatusChanges(changelog, start, end, issue.getStatus().toString());
 	}
 
-	protected List<Issue> findRelevantIssues(ExtendedJiraRestClient client, Request request) throws InterruptedException, ExecutionException {
+	protected List<Issue> findRelevantIssues(ExtendedJiraRestClient client, List<String> users, LocalDate start, LocalDate end) throws InterruptedException, ExecutionException {
 		final List<Issue> retVal = new ArrayList<>();
-		for (String user : request.getUsers()) {
-			final SearchResult result = client.getSearchClient().searchJql(String.format("issuekey IN updatedBy(%1$s, \"%2$s\", \"%3$s\")", user, request.getStart().format(DATE_FORMAT), request.getEnd().format(DATE_FORMAT))).get();
+		for (String user : users) {
+			final SearchResult result = client.getSearchClient().searchJql(String.format("issuekey IN updatedBy(%1$s, \"%2$s\", \"%3$s\")", user, start.format(DATE_FORMAT), end.format(DATE_FORMAT))).get();
 			retVal.addAll(HCollection.asList(result.getIssues()));
 		}
 		return retVal;
@@ -90,16 +137,17 @@ public class Billing implements IStandardCommand {
 		final Request request = HConfig.load(new PathDataSource(arguments.getRequest()), Request.class);
 		final JiraAPI api = JiraAPI.createFromPropertyInput(request == null ? null : request.getApi(), null);
 		try (final ExtendedJiraRestClient client = api.connect(true)) {
-			demoLogChanges(client, arguments.getIssueKey());
-
-			log.info("Found: {}", findRelevantIssues(client, request).stream().map(Issue::getKey).collect(HCollector.joining(", ", ", & ")));
+			final List<Issue> relevantIssues = findRelevantIssues(client, request.getUsers(), request.getStart(), request.getEnd());
+			log.info("Found: {}", relevantIssues.stream().map(Issue::getKey).collect(HCollector.joining(", ", ", & ")));
+			for (Issue issue : relevantIssues) {
+				final List<StatusChange> changes = computeStatusChanges(client, issue.getKey(), request.getStart().atStartOfDay(ZoneId.systemDefault()), request.getEnd().atStartOfDay(ZoneId.systemDefault()).plus(5, ChronoUnit.DAYS));
+				log.info("Changes to {}", issue.getKey());
+				for (StatusChange change : changes) {
+					log.info("\t{} -> {}", change.getStart(), change.getStatus());
+				}
+			}
 		}
 
-		// Progressing: Input - API info, list of users
-		// TODO: Search for all relevant issues (anything updatedBy a relevant user in the given time range https://confluence.atlassian.com/jirasoftwareserver/advanced-searching-functions-reference-939938746.html, might have to search across all users)
-
-		// TODO: I/O - Start time and end time for the report, and the exact time we ran in
-		// TODO: Build a status history for an issue (Limit to the queried time range, Infer initial status from first status change, and create a timestamp of "now" for the end if needed)
 		// TODO: Input - working hours for a person (just start/stop times & days of week for now, add support for exceptions later)
 		// TODO: Input - mapping of issues to accounts (e.g. by epic, by component, etc)
 		// TODO: Construct a per-person timeline
