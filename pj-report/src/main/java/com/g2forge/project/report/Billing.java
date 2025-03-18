@@ -4,6 +4,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintStream;
 import java.net.URISyntaxException;
+import java.nio.file.Path;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
@@ -14,16 +18,20 @@ import com.atlassian.jira.rest.client.api.IssueRestClient;
 import com.atlassian.jira.rest.client.api.domain.ChangelogGroup;
 import com.atlassian.jira.rest.client.api.domain.ChangelogItem;
 import com.atlassian.jira.rest.client.api.domain.Issue;
+import com.atlassian.jira.rest.client.api.domain.SearchResult;
 import com.g2forge.alexandria.command.command.IStandardCommand;
 import com.g2forge.alexandria.command.exit.IExit;
 import com.g2forge.alexandria.command.invocation.CommandInvocation;
 import com.g2forge.alexandria.java.adt.name.IStringNamed;
 import com.g2forge.alexandria.java.core.helpers.HCollection;
+import com.g2forge.alexandria.java.core.helpers.HCollector;
+import com.g2forge.alexandria.java.io.dataaccess.PathDataSource;
 import com.g2forge.alexandria.log.HLog;
 import com.g2forge.gearbox.argparse.ArgumentParser;
 import com.g2forge.gearbox.jira.ExtendedJiraRestClient;
 import com.g2forge.gearbox.jira.JiraAPI;
 import com.g2forge.gearbox.jira.fields.KnownField;
+import com.g2forge.project.core.HConfig;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -32,35 +40,46 @@ import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 public class Billing implements IStandardCommand {
+	protected final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy/MM/dd");
+
 	@Data
 	@Builder(toBuilder = true)
 	@AllArgsConstructor
 	protected static class Arguments {
 		protected final String issueKey;
+
+		protected final Path request;
 	}
 
 	public static void main(String[] args) throws Throwable {
 		IStandardCommand.main(args, new Billing());
 	}
 
-	protected void demoLogChanges(final String issueKey) throws InterruptedException, ExecutionException, IOException, URISyntaxException {
+	protected void demoLogChanges(ExtendedJiraRestClient client, final String issueKey) throws InterruptedException, ExecutionException, IOException, URISyntaxException {
 		final Set<String> fields = HCollection.asList(KnownField.Status).stream().map(IStringNamed::getName).collect(Collectors.toSet());
-		try (final ExtendedJiraRestClient client = JiraAPI.load().connect(true)) {
-			final Issue issue = client.getIssueClient().getIssue(issueKey, HCollection.asList(IssueRestClient.Expandos.CHANGELOG)).get();
-			log.info("Created at {}", issue.getCreationDate());
-			for (ChangelogGroup changelogGroup : issue.getChangelog()) {
-				boolean printedGroupLabel = false;
-				for (ChangelogItem changelogItem : changelogGroup.getItems()) {
-					if ((fields == null) || fields.contains(changelogItem.getField())) {
-						if (!printedGroupLabel) {
-							log.info("{} {}", changelogGroup.getCreated(), changelogGroup.getAuthor().getDisplayName());
-							printedGroupLabel = true;
-						}
-						log.info("\t{}: {} -> {}", changelogItem.getField(), changelogItem.getFromString(), changelogItem.getToString());
+		final Issue issue = client.getIssueClient().getIssue(issueKey, HCollection.asList(IssueRestClient.Expandos.CHANGELOG)).get();
+		log.info("Created at {}", issue.getCreationDate());
+		for (ChangelogGroup changelogGroup : issue.getChangelog()) {
+			boolean printedGroupLabel = false;
+			for (ChangelogItem changelogItem : changelogGroup.getItems()) {
+				if ((fields == null) || fields.contains(changelogItem.getField())) {
+					if (!printedGroupLabel) {
+						log.info("{} {}", changelogGroup.getCreated(), changelogGroup.getAuthor().getDisplayName());
+						printedGroupLabel = true;
 					}
+					log.info("\t{}: {} -> {}", changelogItem.getField(), changelogItem.getFromString(), changelogItem.getToString());
 				}
 			}
 		}
+	}
+
+	protected List<Issue> findRelevantIssues(ExtendedJiraRestClient client, Request request) throws InterruptedException, ExecutionException {
+		final List<Issue> retVal = new ArrayList<>();
+		for (String user : request.getUsers()) {
+			final SearchResult result = client.getSearchClient().searchJql(String.format("issuekey IN updatedBy(%1$s, \"%2$s\", \"%3$s\")", user, request.getStart().format(DATE_FORMAT), request.getEnd().format(DATE_FORMAT))).get();
+			retVal.addAll(HCollection.asList(result.getIssues()));
+		}
+		return retVal;
 	}
 
 	@Override
@@ -68,7 +87,13 @@ public class Billing implements IStandardCommand {
 		HLog.getLogControl().setLogLevel(Level.INFO);
 		final Arguments arguments = ArgumentParser.parse(Arguments.class, invocation.getArguments());
 
-		demoLogChanges(arguments.getIssueKey());
+		final Request request = HConfig.load(new PathDataSource(arguments.getRequest()), Request.class);
+		final JiraAPI api = JiraAPI.createFromPropertyInput(request == null ? null : request.getApi(), null);
+		try (final ExtendedJiraRestClient client = api.connect(true)) {
+			demoLogChanges(client, arguments.getIssueKey());
+
+			log.info("Found: {}", findRelevantIssues(client, request).stream().map(Issue::getKey).collect(HCollector.joining(", ", ", & ")));
+		}
 
 		// Progressing: Input - API info, list of users
 		// TODO: Search for all relevant issues (anything updatedBy a relevant user in the given time range https://confluence.atlassian.com/jirasoftwareserver/advanced-searching-functions-reference-939938746.html, might have to search across all users)

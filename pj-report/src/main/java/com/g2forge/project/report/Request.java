@@ -1,5 +1,6 @@
 package com.g2forge.project.report;
 
+import java.time.LocalDate;
 import java.util.List;
 
 import com.g2forge.gearbox.jira.JiraAPI;
@@ -17,4 +18,8 @@ public class Request {
 
 	@Singular
 	protected final List<String> users;
+
+	protected final LocalDate start;
+
+	protected final LocalDate end;
 }

@@ -33,19 +33,17 @@ import com.atlassian.jira.rest.client.api.domain.input.LinkIssuesInput;
 import com.atlassian.jira.rest.client.api.domain.input.TransitionInput;
 import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.databind.JsonMappingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.g2forge.alexandria.command.command.IStandardCommand;
 import com.g2forge.alexandria.command.exit.IExit;
 import com.g2forge.alexandria.command.invocation.CommandInvocation;
 import com.g2forge.alexandria.java.core.error.HError;
 import com.g2forge.alexandria.java.io.dataaccess.IDataSource;
 import com.g2forge.alexandria.java.io.dataaccess.PathDataSource;
-import com.g2forge.alexandria.java.type.ref.ITypeRef;
 import com.g2forge.alexandria.log.HLog;
 import com.g2forge.gearbox.jira.ExtendedJiraRestClient;
 import com.g2forge.gearbox.jira.JiraAPI;
 import com.g2forge.gearbox.jira.fields.KnownField;
+import com.g2forge.project.core.HConfig;
 import com.g2forge.project.plan.create.CreateIssue.CreateIssueBuilder;
 import com.google.common.base.Objects;
 
@@ -217,21 +215,12 @@ public class Create implements IStandardCommand {
 	protected final Map<String, Map<String, BasicComponent>> projectComponentsCache = new LinkedHashMap<>();
 
 	public List<String> createIssues(IDataSource serverDataSource, IDataSource configDataSource) throws JsonParseException, JsonMappingException, IOException, URISyntaxException, InterruptedException, ExecutionException {
-		final ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
-
 		// Load the config, but if it's empty, don't bother
-		final CreateConfig config;
-		try (final InputStream stream = configDataSource.getStream(ITypeRef.of(InputStream.class))) {
-			config = mapper.readValue(stream, CreateConfig.class);
-		}
+		final CreateConfig config = HConfig.load(configDataSource, CreateConfig.class);
 		if ((config.getIssues() == null) || config.getIssues().isEmpty()) return Collections.emptyList();
 
 		// Load the server if one is specified;
-		final Server server;
-		if (serverDataSource != null) try (final InputStream stream = serverDataSource.getStream(ITypeRef.of(InputStream.class))) {
-			server = mapper.readValue(stream, Server.class);
-		}
-		else server = null;
+		final Server server = (serverDataSource != null) ? HConfig.load(serverDataSource, Server.class) : null;
 
 		config.validateFlags();
 		final Changes changes = computeChanges(server, config);
