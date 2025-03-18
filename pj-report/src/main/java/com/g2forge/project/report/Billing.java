@@ -19,9 +19,10 @@ import org.slf4j.event.Level;
 
 import com.atlassian.jira.rest.client.api.IssueRestClient;
 import com.atlassian.jira.rest.client.api.domain.ChangelogGroup;
-import com.atlassian.jira.rest.client.api.domain.ChangelogItem;
 import com.atlassian.jira.rest.client.api.domain.Issue;
 import com.atlassian.jira.rest.client.api.domain.SearchResult;
+import com.g2forge.alexandria.adt.associative.cache.Cache;
+import com.g2forge.alexandria.adt.associative.cache.NeverCacheEvictionPolicy;
 import com.g2forge.alexandria.command.command.IStandardCommand;
 import com.g2forge.alexandria.command.exit.IExit;
 import com.g2forge.alexandria.command.invocation.CommandInvocation;
@@ -32,13 +33,11 @@ import com.g2forge.alexandria.log.HLog;
 import com.g2forge.gearbox.argparse.ArgumentParser;
 import com.g2forge.gearbox.jira.ExtendedJiraRestClient;
 import com.g2forge.gearbox.jira.JiraAPI;
-import com.g2forge.gearbox.jira.fields.KnownField;
 import com.g2forge.project.core.HConfig;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -50,15 +49,6 @@ public class Billing implements IStandardCommand {
 		protected final String issueKey;
 
 		protected final Path request;
-	}
-
-	@Data
-	@Builder(toBuilder = true)
-	@RequiredArgsConstructor
-	protected static class StatusChange {
-		protected final ZonedDateTime start;
-
-		protected final String status;
 	}
 
 	public static ZonedDateTime convert(DateTime dateTime) {
@@ -73,51 +63,24 @@ public class Billing implements IStandardCommand {
 		return new DateTime(millis, dateTimeZone);
 	}
 
-	protected static List<StatusChange> convertToStatusChanges(final Iterable<ChangelogGroup> changelog, ZonedDateTime start, ZonedDateTime end, String status) {
-		final List<StatusChange> retVal = new ArrayList<>();
-		String finalStatus = status;
-		for (ChangelogGroup changelogGroup : changelog) {
-			final ZonedDateTime created = convert(changelogGroup.getCreated());
-			// Ignore changes before the start, and stop processing after the end
-			if (created.isBefore(start)) continue;
-
-			// Extract the from and to status from any changes to the status field (take the last change if there are multiple which should never happen)
-			String fromStatus = null, toStatus = null;
-			for (ChangelogItem changelogItem : changelogGroup.getItems()) {
-				if (!KnownField.Status.getName().equals(changelogItem.getField())) continue;
-				fromStatus = changelogItem.getFromString();
-				toStatus = changelogItem.getToString();
-			}
-
-			// IF the status changed (not all change log groups include a chance to the status), then...
-			if (toStatus != null) {
-				if (created.isAfter(end)) {
-					finalStatus = fromStatus;
-					break;
-				}
-
-				// If this is the first change, record the starting statu
-				if (retVal.isEmpty()) retVal.add(new StatusChange(start, fromStatus));
-				retVal.add(new StatusChange(created, toStatus));
-			}
-		}
-		// Add a start marker if we didn't get a chance to already
-		if (retVal.isEmpty()) retVal.add(new StatusChange(start, finalStatus));
-		// Add an end marker if we didn't get a chance at exactly the right time
-		if (!retVal.get(retVal.size() - 1).getStart().isEqual(end)) retVal.add(new StatusChange(end, finalStatus));
-		return retVal;
-	}
-
 	public static void main(String[] args) throws Throwable {
 		IStandardCommand.main(args, new Billing());
 	}
 
 	protected final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy/MM/dd");
 
-	protected List<StatusChange> computeStatusChanges(ExtendedJiraRestClient client, String issueKey, ZonedDateTime start, ZonedDateTime end) throws InterruptedException, ExecutionException {
+	protected List<Change> computeChanges(ExtendedJiraRestClient client, String issueKey, ZonedDateTime start, ZonedDateTime end) throws InterruptedException, ExecutionException {
 		final Issue issue = client.getIssueClient().getIssue(issueKey, HCollection.asList(IssueRestClient.Expandos.CHANGELOG)).get();
 		final Iterable<ChangelogGroup> changelog = issue.getChangelog();
-		return convertToStatusChanges(changelog, start, end, issue.getStatus().toString());
+		final Cache<String, String> users = new Cache<>(id -> {
+			if (id == null) return null;
+			try {
+				return client.getUserClient().getUserByKey(id).get().getName();
+			} catch (InterruptedException | ExecutionException e) {
+				throw new RuntimeException("Failed to look up user: " + id, e);
+			}
+		}, NeverCacheEvictionPolicy.create());
+		return Change.toChanges(changelog, start, end, issue.getAssignee().getName(), issue.getStatus().getName(), users);
 	}
 
 	protected List<Issue> findRelevantIssues(ExtendedJiraRestClient client, List<String> users, LocalDate start, LocalDate end) throws InterruptedException, ExecutionException {
@@ -140,13 +103,19 @@ public class Billing implements IStandardCommand {
 			final List<Issue> relevantIssues = findRelevantIssues(client, request.getUsers(), request.getStart(), request.getEnd());
 			log.info("Found: {}", relevantIssues.stream().map(Issue::getKey).collect(HCollector.joining(", ", ", & ")));
 			for (Issue issue : relevantIssues) {
-				final List<StatusChange> changes = computeStatusChanges(client, issue.getKey(), request.getStart().atStartOfDay(ZoneId.systemDefault()), request.getEnd().atStartOfDay(ZoneId.systemDefault()).plus(5, ChronoUnit.DAYS));
+				final List<Change> changes = computeChanges(client, issue.getKey(), request.getStart().atStartOfDay(ZoneId.systemDefault()), request.getEnd().atStartOfDay(ZoneId.systemDefault()).plus(5, ChronoUnit.DAYS));
 				log.info("Changes to {}", issue.getKey());
-				for (StatusChange change : changes) {
-					log.info("\t{} -> {}", change.getStart(), change.getStatus());
+				for (Change change : changes) {
+					log.info("\t{} -> {} - {}", change.getStart(), change.getAssignee(), change.getStatus());
 				}
 			}
 		}
+
+		// TODO: Log changes in assignee, along with status
+		// TODO: Compute intersection of working hours with issue in billable status
+		//			Walk through the issue timeline
+		//			For each interval project it against the assignees working hours
+		//			If there's an overlap, then convert to billable time
 
 		// TODO: Input - working hours for a person (just start/stop times & days of week for now, add support for exceptions later)
 		// TODO: Input - mapping of issues to accounts (e.g. by epic, by component, etc)
