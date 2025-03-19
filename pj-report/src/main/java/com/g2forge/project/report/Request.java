@@ -4,8 +4,6 @@ import java.time.LocalDate;
 import java.util.Map;
 import java.util.Set;
 
-import com.g2forge.gearbox.jira.JiraAPI;
-
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -15,10 +13,6 @@ import lombok.Singular;
 @Builder(toBuilder = true)
 @AllArgsConstructor
 public class Request {
-	protected final JiraAPI api;
-
-	protected final String userQueryParameter;
-
 	protected final String jql;
 
 	@Singular

@@ -26,6 +26,7 @@ import com.atlassian.jira.rest.client.api.domain.BasicComponent;
 import com.atlassian.jira.rest.client.api.domain.ChangelogGroup;
 import com.atlassian.jira.rest.client.api.domain.Issue;
 import com.atlassian.jira.rest.client.api.domain.SearchResult;
+import com.atlassian.jira.rest.client.api.domain.User;
 import com.g2forge.alexandria.adt.associative.cache.Cache;
 import com.g2forge.alexandria.adt.associative.cache.NeverCacheEvictionPolicy;
 import com.g2forge.alexandria.command.command.IStandardCommand;
@@ -44,7 +45,9 @@ import com.g2forge.alexandria.match.HMatch;
 import com.g2forge.gearbox.argparse.ArgumentParser;
 import com.g2forge.gearbox.jira.ExtendedJiraRestClient;
 import com.g2forge.gearbox.jira.JiraAPI;
+import com.g2forge.gearbox.jira.user.UserPrimaryKey;
 import com.g2forge.project.core.HConfig;
+import com.g2forge.project.core.Server;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -59,6 +62,8 @@ public class Billing implements IStandardCommand {
 	@Builder(toBuilder = true)
 	@AllArgsConstructor
 	protected static class Arguments {
+		protected final Path server;
+
 		protected final Path request;
 	}
 
@@ -170,18 +175,26 @@ public class Billing implements IStandardCommand {
 
 	protected final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy/MM/dd");
 
-	protected List<Change> computeChanges(ExtendedJiraRestClient client, String userQueryParameter, String issueKey, ZonedDateTime start, ZonedDateTime end) throws InterruptedException, ExecutionException {
+	protected List<Change> computeChanges(ExtendedJiraRestClient client, Server server, String issueKey, ZonedDateTime start, ZonedDateTime end) throws InterruptedException, ExecutionException {
 		final Issue issue = client.getIssueClient().getIssue(issueKey, HCollection.asList(IssueRestClient.Expandos.CHANGELOG)).get();
 		final Iterable<ChangelogGroup> changelog = issue.getChangelog();
-		final Cache<String, String> users = new Cache<>(id -> {
-			if (id == null) return null;
+
+		final UserPrimaryKey userPrimaryKey = server.getUserPrimaryKey() == null ? UserPrimaryKey.NAME : server.getUserPrimaryKey();
+		final Map<String, String> userReverseMap = server.getUsers().entrySet().stream().collect(Collectors.toMap(Map.Entry::getValue, Map.Entry::getKey));
+		final IFunction1<User, String> toFriendly = user -> {
+			final String primaryKey = userPrimaryKey.getValue(user);
+			return userReverseMap.getOrDefault(primaryKey, primaryKey);
+		};
+		final Cache<String, String> users = new Cache<>(primaryKey -> {
+			if (primaryKey == null) return null;
 			try {
-				return client.getUserClient().getUserByQueryParam(userQueryParameter, id).get().getName();
+				final User user = client.getUserClient().getUserByQueryParam(userPrimaryKey.getQueryParameter(), primaryKey).get();
+				return toFriendly.apply(user);
 			} catch (InterruptedException | ExecutionException e) {
-				throw new RuntimeException("Failed to look up user: " + id, e);
+				throw new RuntimeException("Failed to look up user: " + primaryKey, e);
 			}
 		}, NeverCacheEvictionPolicy.create());
-		return Change.toChanges(changelog, start, end, issue.getAssignee().getName(), issue.getStatus().getName(), users);
+		return Change.toChanges(changelog, start, end, toFriendly.apply(issue.getAssignee()), issue.getStatus().getName(), users);
 	}
 
 	protected List<Issue> findRelevantIssues(ExtendedJiraRestClient client, String jql, Collection<? extends String> users, LocalDate start, LocalDate end) throws InterruptedException, ExecutionException {
@@ -204,16 +217,31 @@ public class Billing implements IStandardCommand {
 		return retVal;
 	}
 
+	protected void examineIssue(final ExtendedJiraRestClient client, Server server, Request request, IPredicate1<Object> isComponentBillable, Issue issue, Bill.BillBuilder billBuilder) throws InterruptedException, ExecutionException {
+		log.info("Examining {}", issue.getKey());
+		final Set<String> billableComponents = HCollection.asList(issue.getComponents()).stream().map(BasicComponent::getName).distinct().filter(isComponentBillable).collect(Collectors.toSet());
+		if (billableComponents.isEmpty()) return;
+
+		final List<Change> changes = computeChanges(client, server, issue.getKey(), request.getStart().atStartOfDay(ZoneId.systemDefault()), request.getEnd().atStartOfDay(ZoneId.systemDefault()));
+		final Map<String, Double> billableHoursByUser = computeBillableHoursByUser(changes, status -> request.getBillableStatuses().contains(status), request.getUsers()::get);
+		final Map<String, Double> billableHoursByUserDividedByComponents = billableHoursByUser.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue() / billableComponents.size()));
+		for (String billableComponent : billableComponents) {
+			for (Map.Entry<String, Double> entry : billableHoursByUserDividedByComponents.entrySet()) {
+				billBuilder.add(billableComponent, entry.getKey(), issue.getKey(), entry.getValue());
+			}
+		}
+	}
+
 	@Override
 	public IExit invoke(CommandInvocation<InputStream, PrintStream> invocation) throws Throwable {
 		HLog.getLogControl().setLogLevel(Level.INFO);
 		final Arguments arguments = ArgumentParser.parse(Arguments.class, invocation.getArguments());
 
+		final Server server = HConfig.load(new PathDataSource(arguments.getServer()), Server.class);
 		final Request request = HConfig.load(new PathDataSource(arguments.getRequest()), Request.class);
-		final String userQueryParameter = request.getUserQueryParameter() == null ? "key" : request.getUserQueryParameter();
 		final IPredicate1<Object> isComponentBillable = HMatch.createPredicate(true, request.getBillableComponents());
 
-		final JiraAPI api = JiraAPI.createFromPropertyInput(request == null ? null : request.getApi(), null);
+		final JiraAPI api = JiraAPI.createFromPropertyInput(server == null ? null : server.getApi(), null);
 		try (final ExtendedJiraRestClient client = api.connect(true)) {
 			final Bill.BillBuilder billBuilder = Bill.builder();
 
@@ -224,18 +252,7 @@ public class Billing implements IStandardCommand {
 			}
 			log.info("Found: {}", issues.keySet().stream().collect(HCollector.joining(", ", ", & ")));
 			for (Issue issue : issues.values()) {
-				log.info("Examining {}", issue.getKey());
-				final Set<String> billableComponents = HCollection.asList(issue.getComponents()).stream().map(BasicComponent::getName).distinct().filter(isComponentBillable).collect(Collectors.toSet());
-				if (billableComponents.isEmpty()) continue;
-
-				final List<Change> changes = computeChanges(client, userQueryParameter, issue.getKey(), request.getStart().atStartOfDay(ZoneId.systemDefault()), request.getEnd().atStartOfDay(ZoneId.systemDefault()));
-				final Map<String, Double> billableHoursByUser = computeBillableHoursByUser(changes, status -> request.getBillableStatuses().contains(status), request.getUsers()::get);
-				final Map<String, Double> billableHoursByUserDividedByComponents = billableHoursByUser.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue() / billableComponents.size()));
-				for (String billableComponent : billableComponents) {
-					for (Map.Entry<String, Double> entry : billableHoursByUserDividedByComponents.entrySet()) {
-						billBuilder.add(billableComponent, entry.getKey(), issue.getKey(), entry.getValue());
-					}
-				}
+				examineIssue(client, server, request, isComponentBillable, issue, billBuilder);
 			}
 
 			final Bill bill = billBuilder.build();

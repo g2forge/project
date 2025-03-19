@@ -44,6 +44,7 @@ import com.g2forge.gearbox.jira.ExtendedJiraRestClient;
 import com.g2forge.gearbox.jira.JiraAPI;
 import com.g2forge.gearbox.jira.fields.KnownField;
 import com.g2forge.project.core.HConfig;
+import com.g2forge.project.core.Server;
 import com.g2forge.project.plan.create.CreateIssue.CreateIssueBuilder;
 import com.google.common.base.Objects;
 
