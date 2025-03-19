@@ -17,6 +17,10 @@ import lombok.Singular;
 public class Request {
 	protected final JiraAPI api;
 
+	protected final String userQueryParameter;
+
+	protected final String jql;
+
 	@Singular
 	protected final Map<String, WorkingHours> users;
 

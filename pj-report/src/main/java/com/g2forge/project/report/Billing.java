@@ -40,6 +40,7 @@ import com.g2forge.alexandria.java.function.IPredicate1;
 import com.g2forge.alexandria.java.function.builder.IBuilder;
 import com.g2forge.alexandria.java.io.dataaccess.PathDataSource;
 import com.g2forge.alexandria.log.HLog;
+import com.g2forge.alexandria.match.HMatch;
 import com.g2forge.gearbox.argparse.ArgumentParser;
 import com.g2forge.gearbox.jira.ExtendedJiraRestClient;
 import com.g2forge.gearbox.jira.JiraAPI;
@@ -58,8 +59,6 @@ public class Billing implements IStandardCommand {
 	@Builder(toBuilder = true)
 	@AllArgsConstructor
 	protected static class Arguments {
-		protected final String issueKey;
-
 		protected final Path request;
 	}
 
@@ -138,8 +137,11 @@ public class Billing implements IStandardCommand {
 		final Map<String, Double> retVal = new TreeMap<>();
 		for (int i = 0; i < changes.size() - 1; i++) {
 			final Change change = changes.get(i);
-			if (!isStatusBillable.test(change.getStatus())) continue;
+			if ((change.getAssignee() == null) || !isStatusBillable.test(change.getStatus())) continue;
+
 			final WorkingHours workingHours = workingHoursFunction.apply(change.getAssignee());
+			if (workingHours == null) throw new IllegalArgumentException("No working hours found for user \"" + change.getAssignee() + "\", please configure the billing report to include the working hours for that user!");
+
 			final Double billable = workingHours.computeBillableHours(change.getStart(), changes.get(i + 1).getStart());
 			if (billable < 0) throw new UnreachableCodeError();
 			if (billable > 0) {
@@ -168,13 +170,13 @@ public class Billing implements IStandardCommand {
 
 	protected final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy/MM/dd");
 
-	protected List<Change> computeChanges(ExtendedJiraRestClient client, String issueKey, ZonedDateTime start, ZonedDateTime end) throws InterruptedException, ExecutionException {
+	protected List<Change> computeChanges(ExtendedJiraRestClient client, String userQueryParameter, String issueKey, ZonedDateTime start, ZonedDateTime end) throws InterruptedException, ExecutionException {
 		final Issue issue = client.getIssueClient().getIssue(issueKey, HCollection.asList(IssueRestClient.Expandos.CHANGELOG)).get();
 		final Iterable<ChangelogGroup> changelog = issue.getChangelog();
 		final Cache<String, String> users = new Cache<>(id -> {
 			if (id == null) return null;
 			try {
-				return client.getUserClient().getUserByKey(id).get().getName();
+				return client.getUserClient().getUserByQueryParam(userQueryParameter, id).get().getName();
 			} catch (InterruptedException | ExecutionException e) {
 				throw new RuntimeException("Failed to look up user: " + id, e);
 			}
@@ -182,19 +184,21 @@ public class Billing implements IStandardCommand {
 		return Change.toChanges(changelog, start, end, issue.getAssignee().getName(), issue.getStatus().getName(), users);
 	}
 
-	protected List<Issue> findRelevantIssues(ExtendedJiraRestClient client, Collection<? extends String> users, LocalDate start, LocalDate end) throws InterruptedException, ExecutionException {
+	protected List<Issue> findRelevantIssues(ExtendedJiraRestClient client, String jql, Collection<? extends String> users, LocalDate start, LocalDate end) throws InterruptedException, ExecutionException {
 		final List<Issue> retVal = new ArrayList<>();
 		for (String user : users) {
-			final String jql = String.format("issuekey IN updatedBy(%1$s, \"%2$s\", \"%3$s\")", user, start.format(DATE_FORMAT), end.format(DATE_FORMAT));
-			final int max = 500;
+			log.info("Finding issues for {}", user);
+			final String compositeJQL = String.format("issuekey IN updatedBy(%1$s, \"%2$s\", \"%3$s\")", user, start.format(DATE_FORMAT), end.format(DATE_FORMAT)) + ((jql == null) ? "" : (" AND " + jql));
+			final int desiredMax = 500;
 			int base = 0;
 			while (true) {
-				final SearchResult searchResult = client.getSearchClient().searchJql(jql, max, base, null).get();
-				log.info("Got issues {} to {} of {}", base, base + Math.min(searchResult.getMaxResults(), searchResult.getTotal() - base), searchResult.getTotal());
+				final SearchResult searchResult = client.getSearchClient().searchJql(compositeJQL, desiredMax, base, null).get();
+				final int actualMax = searchResult.getMaxResults();
+				log.info("\tGot issues {} to {} of {}", base, base + Math.min(actualMax, searchResult.getTotal() - base), searchResult.getTotal());
 
 				retVal.addAll(HCollection.asList(searchResult.getIssues()));
-				if ((base + max) >= searchResult.getTotal()) break;
-				else base += max;
+				if ((base + actualMax) >= searchResult.getTotal()) break;
+				else base += actualMax;
 			}
 		}
 		return retVal;
@@ -206,17 +210,25 @@ public class Billing implements IStandardCommand {
 		final Arguments arguments = ArgumentParser.parse(Arguments.class, invocation.getArguments());
 
 		final Request request = HConfig.load(new PathDataSource(arguments.getRequest()), Request.class);
+		final String userQueryParameter = request.getUserQueryParameter() == null ? "key" : request.getUserQueryParameter();
+		final IPredicate1<Object> isComponentBillable = HMatch.createPredicate(true, request.getBillableComponents());
+
 		final JiraAPI api = JiraAPI.createFromPropertyInput(request == null ? null : request.getApi(), null);
 		try (final ExtendedJiraRestClient client = api.connect(true)) {
 			final Bill.BillBuilder billBuilder = Bill.builder();
-			final List<Issue> relevantIssues = findRelevantIssues(client, request.getUsers().keySet(), request.getStart(), request.getEnd());
-			log.info("Found: {}", relevantIssues.stream().map(Issue::getKey).collect(HCollector.joining(", ", ", & ")));
-			for (Issue issue : relevantIssues) {
-				final Set<String> components = HCollection.asList(issue.getComponents()).stream().map(BasicComponent::getName).collect(Collectors.toSet());
-				final Set<String> billableComponents = HCollection.intersection(components, request.getBillableComponents());
+
+			final Map<String, Issue> issues;
+			{
+				final List<Issue> relevantIssues = findRelevantIssues(client, request.getJql(), request.getUsers().keySet(), request.getStart(), request.getEnd());
+				issues = relevantIssues.stream().collect(Collectors.toMap(Issue::getKey, IFunction1.identity(), (i0, i1) -> i0));
+			}
+			log.info("Found: {}", issues.keySet().stream().collect(HCollector.joining(", ", ", & ")));
+			for (Issue issue : issues.values()) {
+				log.info("Examining {}", issue.getKey());
+				final Set<String> billableComponents = HCollection.asList(issue.getComponents()).stream().map(BasicComponent::getName).distinct().filter(isComponentBillable).collect(Collectors.toSet());
 				if (billableComponents.isEmpty()) continue;
 
-				final List<Change> changes = computeChanges(client, issue.getKey(), request.getStart().atStartOfDay(ZoneId.systemDefault()), request.getEnd().atStartOfDay(ZoneId.systemDefault()));
+				final List<Change> changes = computeChanges(client, userQueryParameter, issue.getKey(), request.getStart().atStartOfDay(ZoneId.systemDefault()), request.getEnd().atStartOfDay(ZoneId.systemDefault()));
 				final Map<String, Double> billableHoursByUser = computeBillableHoursByUser(changes, status -> request.getBillableStatuses().contains(status), request.getUsers()::get);
 				final Map<String, Double> billableHoursByUserDividedByComponents = billableHoursByUser.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue() / billableComponents.size()));
 				for (String billableComponent : billableComponents) {
@@ -226,14 +238,24 @@ public class Billing implements IStandardCommand {
 				}
 			}
 
-			final Map<String, Issue> issues = relevantIssues.stream().collect(Collectors.toMap(Issue::getKey, IFunction1.identity()));
 			final Bill bill = billBuilder.build();
+			log.info("Bill by component");
 			for (String component : bill.getComponents()) {
 				final Bill byComponent = bill.filterBy(component, null, null);
-				log.info("{}: {}h", component, Math.ceil(byComponent.getTotal()));
+				log.info("\t{}: {}h", component, Math.ceil(byComponent.getTotal()));
 				for (String issue : byComponent.getIssues()) {
 					final Bill byIssue = byComponent.filterBy(null, null, issue);
-					log.info("\t{} {}: {}h", issue, issues.get(issue).getSummary(), Math.round(byIssue.getTotal() * 100.0) / 100.0);
+					log.info("\t\t{} {}: {}h", issue, issues.get(issue).getSummary(), Math.round(byIssue.getTotal() * 100.0) / 100.0);
+				}
+			}
+
+			log.info("Bill by user");
+			for (String user : bill.getUsers()) {
+				final Bill byUser = bill.filterBy(null, user, null);
+				log.info("\t{}: {}h", user, Math.ceil(byUser.getTotal()));
+				for (String issue : byUser.getIssues()) {
+					final Bill byIssue = byUser.filterBy(null, null, issue);
+					log.info("\t\t{} {}: {}h", issue, issues.get(issue).getSummary(), Math.round(byIssue.getTotal() * 100.0) / 100.0);
 				}
 			}
 		}
