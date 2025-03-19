@@ -3,9 +3,13 @@ package com.g2forge.project.report;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import com.atlassian.jira.rest.client.api.domain.ChangelogGroup;
 import com.atlassian.jira.rest.client.api.domain.ChangelogItem;
+import com.g2forge.alexandria.java.adt.compare.ComparableComparator;
+import com.g2forge.alexandria.java.adt.compare.MappedComparator;
+import com.g2forge.alexandria.java.core.helpers.HCollection;
 import com.g2forge.alexandria.java.function.IFunction1;
 import com.g2forge.gearbox.jira.fields.KnownField;
 
@@ -27,7 +31,8 @@ public class Change {
 		final List<Change> retVal = new ArrayList<>();
 		String finalAssignee = assignee, finalStatus = status;
 		boolean foundFinalAssignee = false, foundFinalStatus = false;
-		for (ChangelogGroup changelogGroup : changelog) {
+		final List<ChangelogGroup> sorted = HCollection.asList(changelog).stream().sorted(new MappedComparator<>(ChangelogGroup::getCreated, ComparableComparator.create())).collect(Collectors.toList());
+		for (ChangelogGroup changelogGroup : sorted) {
 			final ZonedDateTime created = Billing.convert(changelogGroup.getCreated());
 			// Ignore changes before the start, and stop processing after the end
 			if (created.isBefore(start)) continue;
