@@ -24,5 +24,10 @@
 			<artifactId>ax-match</artifactId>
 			<version>${alexandria.version}</version>
 		</dependency>
+		<dependency>
+			<groupId>com.g2forge.gearbox</groupId>
+			<artifactId>gb-csv</artifactId>
+			<version>${gearbox.version}</version>
+		</dependency>
 	</dependencies>
 </project>

@@ -3,6 +3,7 @@ package com.g2forge.project.report;
 import java.io.InputStream;
 import java.io.PrintStream;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -42,6 +43,7 @@ import com.g2forge.alexandria.java.function.builder.IBuilder;
 import com.g2forge.alexandria.java.io.dataaccess.PathDataSource;
 import com.g2forge.alexandria.log.HLog;
 import com.g2forge.alexandria.match.HMatch;
+import com.g2forge.alexandria.path.path.filename.Filename;
 import com.g2forge.gearbox.argparse.ArgumentParser;
 import com.g2forge.gearbox.jira.ExtendedJiraRestClient;
 import com.g2forge.gearbox.jira.JiraAPI;
@@ -256,15 +258,22 @@ public class Billing implements IStandardCommand {
 			}
 
 			final Bill bill = billBuilder.build();
+			final List<BillLine> billLines = new ArrayList<>();
 			log.info("Bill by component");
 			for (String component : bill.getComponents()) {
 				final Bill byComponent = bill.filterBy(component, null, null);
 				log.info("\t{}: {}h", component, Math.ceil(byComponent.getTotal()));
 				for (String issue : byComponent.getIssues()) {
 					final Bill byIssue = byComponent.filterBy(null, null, issue);
-					log.info("\t\t{} {}: {}h", issue, issues.get(issue).getSummary(), Math.round(byIssue.getTotal() * 100.0) / 100.0);
+					final String summary = issues.get(issue).getSummary();
+					final double hours = Math.round(byIssue.getTotal() * 100.0) / 100.0;
+					log.info("\t\t{} {}: {}h", issue, summary, hours);
+					billLines.add(new BillLine(component, issue, summary, hours));
 				}
 			}
+			final Path outputFile = Filename.replaceExtension(arguments.getRequest(), "csv");
+			log.info("Writing bill to {}", outputFile);
+			BillLine.getMapper().write(billLines, outputFile);
 
 			log.info("Bill by user");
 			for (String user : bill.getUsers()) {
@@ -275,6 +284,7 @@ public class Billing implements IStandardCommand {
 					log.info("\t\t{} {}: {}h", issue, issues.get(issue).getSummary(), Math.round(byIssue.getTotal() * 100.0) / 100.0);
 				}
 			}
+
 		}
 
 		// TODO: Report on any times where a person was not billing to anything, but was working
