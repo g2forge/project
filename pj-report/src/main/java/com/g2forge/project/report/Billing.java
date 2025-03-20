@@ -204,7 +204,7 @@ public class Billing implements IStandardCommand {
 				final int actualMax = searchResult.getMaxResults();
 				log.info("\tGot issues {} to {} of {}", base, base + Math.min(actualMax, searchResult.getTotal() - base), searchResult.getTotal());
 
-				retVal.addAll(HCollection.asList(searchResult.getIssues()));
+				retVal.addAll(HCollection.asListIterable(searchResult.getIssues()));
 				if ((base + actualMax) >= searchResult.getTotal()) break;
 				else base += actualMax;
 			}
@@ -214,7 +214,7 @@ public class Billing implements IStandardCommand {
 
 	protected List<Change> examineIssue(final ExtendedJiraRestClient client, Server server, Request request, IPredicate1<String> isStatusBillable, IPredicate1<Object> isComponentBillable, IFunction1<User, String> userToFriendly, Issue issue, Bill.BillBuilder billBuilder) throws InterruptedException, ExecutionException {
 		log.info("Examining {}", issue.getKey());
-		final Set<String> billableComponents = HCollection.asList(issue.getComponents()).stream().map(BasicComponent::getName).distinct().filter(isComponentBillable).collect(Collectors.toSet());
+		final Set<String> billableComponents = HCollection.asListIterable(issue.getComponents()).stream().map(BasicComponent::getName).distinct().filter(isComponentBillable).collect(Collectors.toSet());
 		if (billableComponents.isEmpty()) return null;
 
 		final List<Change> changes = computeChanges(client, server, userToFriendly, issue.getKey(), request.getStart().atStartOfDay(ZoneId.systemDefault()), request.getEnd().atStartOfDay(ZoneId.systemDefault()));

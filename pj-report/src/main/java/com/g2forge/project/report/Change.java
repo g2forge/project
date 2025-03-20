@@ -31,7 +31,7 @@ public class Change {
 		final List<Change> retVal = new ArrayList<>();
 		String finalAssignee = assignee, finalStatus = status;
 		boolean foundFinalAssignee = false, foundFinalStatus = false;
-		final List<ChangelogGroup> sorted = HCollection.asList(changelog).stream().sorted(new MappedComparator<>(ChangelogGroup::getCreated, ComparableComparator.create())).collect(Collectors.toList());
+		final List<ChangelogGroup> sorted = HCollection.asListIterable(changelog).stream().sorted(new MappedComparator<>(ChangelogGroup::getCreated, ComparableComparator.create())).collect(Collectors.toList());
 		for (ChangelogGroup changelogGroup : sorted) {
 			final ZonedDateTime created = Billing.convert(changelogGroup.getCreated());
 			// Ignore changes before the start, and stop processing after the end
