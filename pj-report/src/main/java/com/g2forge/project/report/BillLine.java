@@ -14,9 +14,11 @@ import lombok.NoArgsConstructor;
 @Builder(toBuilder = true)
 public class BillLine {
 	@Getter(lazy = true)
-	private static final CSVMapper<BillLine> mapper = new CSVMapper<>(BillLine.class, "component", "key", "summary", "hours");
+	private static final CSVMapper<BillLine> mapper = new CSVMapper<>(BillLine.class, "component", "assignee", "key", "summary", "hours", "ranges", "link");
 
 	protected String component;
+
+	protected String assignee;
 
 	protected String key;
 
@@ -24,4 +26,7 @@ public class BillLine {
 
 	protected double hours;
 
+	protected String ranges;
+
+	protected String link;
 }

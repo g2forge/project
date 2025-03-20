@@ -28,4 +28,8 @@ public class Server implements IFieldConfig {
 	protected final UserPrimaryKey userPrimaryKey;
 
 	protected final JiraAPI api;
+
+	public UserPrimaryKey getUserPrimaryKey() {
+		return userPrimaryKey == null ? UserPrimaryKey.NAME : userPrimaryKey;
+	}
 }

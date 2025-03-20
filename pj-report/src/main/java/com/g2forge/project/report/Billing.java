@@ -3,9 +3,9 @@ package com.g2forge.project.report;
 import java.io.InputStream;
 import java.io.PrintStream;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
@@ -47,7 +47,6 @@ import com.g2forge.alexandria.path.path.filename.Filename;
 import com.g2forge.gearbox.argparse.ArgumentParser;
 import com.g2forge.gearbox.jira.ExtendedJiraRestClient;
 import com.g2forge.gearbox.jira.JiraAPI;
-import com.g2forge.gearbox.jira.user.UserPrimaryKey;
 import com.g2forge.project.core.HConfig;
 import com.g2forge.project.core.Server;
 
@@ -177,26 +176,20 @@ public class Billing implements IStandardCommand {
 
 	protected final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy/MM/dd");
 
-	protected List<Change> computeChanges(ExtendedJiraRestClient client, Server server, String issueKey, ZonedDateTime start, ZonedDateTime end) throws InterruptedException, ExecutionException {
+	protected List<Change> computeChanges(ExtendedJiraRestClient client, Server server, IFunction1<User, String> userToFriendly, String issueKey, ZonedDateTime start, ZonedDateTime end) throws InterruptedException, ExecutionException {
 		final Issue issue = client.getIssueClient().getIssue(issueKey, HCollection.asList(IssueRestClient.Expandos.CHANGELOG)).get();
 		final Iterable<ChangelogGroup> changelog = issue.getChangelog();
 
-		final UserPrimaryKey userPrimaryKey = server.getUserPrimaryKey() == null ? UserPrimaryKey.NAME : server.getUserPrimaryKey();
-		final Map<String, String> userReverseMap = server.getUsers().entrySet().stream().collect(Collectors.toMap(Map.Entry::getValue, Map.Entry::getKey));
-		final IFunction1<User, String> toFriendly = user -> {
-			final String primaryKey = userPrimaryKey.getValue(user);
-			return userReverseMap.getOrDefault(primaryKey, primaryKey);
-		};
-		final Cache<String, String> users = new Cache<>(primaryKey -> {
+		final IFunction1<String, String> users = new Cache<>(primaryKey -> {
 			if (primaryKey == null) return null;
 			try {
-				final User user = client.getUserClient().getUserByQueryParam(userPrimaryKey.getQueryParameter(), primaryKey).get();
-				return toFriendly.apply(user);
+				final User user = client.getUserClient().getUserByQueryParam(server.getUserPrimaryKey().getQueryParameter(), primaryKey).get();
+				return userToFriendly.apply(user);
 			} catch (InterruptedException | ExecutionException e) {
 				throw new RuntimeException("Failed to look up user: " + primaryKey, e);
 			}
 		}, NeverCacheEvictionPolicy.create());
-		return Change.toChanges(changelog, start, end, toFriendly.apply(issue.getAssignee()), issue.getStatus().getName(), users);
+		return Change.toChanges(changelog, start, end, userToFriendly.apply(issue.getAssignee()), issue.getStatus().getName(), users);
 	}
 
 	protected List<Issue> findRelevantIssues(ExtendedJiraRestClient client, String jql, Collection<? extends String> users, LocalDate start, LocalDate end) throws InterruptedException, ExecutionException {
@@ -219,20 +212,23 @@ public class Billing implements IStandardCommand {
 		return retVal;
 	}
 
-	protected void examineIssue(final ExtendedJiraRestClient client, Server server, Request request, IPredicate1<Object> isComponentBillable, Issue issue, Bill.BillBuilder billBuilder) throws InterruptedException, ExecutionException {
+	protected List<Change> examineIssue(final ExtendedJiraRestClient client, Server server, Request request, IPredicate1<String> isStatusBillable, IPredicate1<Object> isComponentBillable, IFunction1<User, String> userToFriendly, Issue issue, Bill.BillBuilder billBuilder) throws InterruptedException, ExecutionException {
 		log.info("Examining {}", issue.getKey());
 		final Set<String> billableComponents = HCollection.asList(issue.getComponents()).stream().map(BasicComponent::getName).distinct().filter(isComponentBillable).collect(Collectors.toSet());
-		if (billableComponents.isEmpty()) return;
+		if (billableComponents.isEmpty()) return null;
 
-		final List<Change> changes = computeChanges(client, server, issue.getKey(), request.getStart().atStartOfDay(ZoneId.systemDefault()), request.getEnd().atStartOfDay(ZoneId.systemDefault()));
-		final Map<String, Double> billableHoursByUser = computeBillableHoursByUser(changes, status -> request.getBillableStatuses().contains(status), request.getUsers()::get);
+		final List<Change> changes = computeChanges(client, server, userToFriendly, issue.getKey(), request.getStart().atStartOfDay(ZoneId.systemDefault()), request.getEnd().atStartOfDay(ZoneId.systemDefault()));
+		final Map<String, Double> billableHoursByUser = computeBillableHoursByUser(changes, isStatusBillable, request.getUsers()::get);
 		final Map<String, Double> billableHoursByUserDividedByComponents = billableHoursByUser.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue() / billableComponents.size()));
 		for (String billableComponent : billableComponents) {
 			for (Map.Entry<String, Double> entry : billableHoursByUserDividedByComponents.entrySet()) {
 				billBuilder.add(billableComponent, entry.getKey(), issue.getKey(), entry.getValue());
 			}
 		}
+		return changes;
 	}
+
+	protected static final DateTimeFormatter RANGE_FORMAT = DateTimeFormatter.ofPattern("yyyy/MM/dd/ HH:mm:ss");
 
 	@Override
 	public IExit invoke(CommandInvocation<InputStream, PrintStream> invocation) throws Throwable {
@@ -241,20 +237,28 @@ public class Billing implements IStandardCommand {
 
 		final Server server = HConfig.load(new PathDataSource(arguments.getServer()), Server.class);
 		final Request request = HConfig.load(new PathDataSource(arguments.getRequest()), Request.class);
+		final IPredicate1<String> isStatusBillable = status -> request.getBillableStatuses().contains(status);
 		final IPredicate1<Object> isComponentBillable = HMatch.createPredicate(true, request.getBillableComponents());
+
+		final Map<String, String> userReverseMap = server.getUsers().entrySet().stream().collect(Collectors.toMap(Map.Entry::getValue, Map.Entry::getKey));
+		final IFunction1<User, String> userToFriendly = user -> {
+			final String primaryKey = server.getUserPrimaryKey().getValue(user);
+			return userReverseMap.getOrDefault(primaryKey, primaryKey);
+		};
 
 		final JiraAPI api = JiraAPI.createFromPropertyInput(server == null ? null : server.getApi(), null);
 		try (final ExtendedJiraRestClient client = api.connect(true)) {
 			final Bill.BillBuilder billBuilder = Bill.builder();
 
 			final Map<String, Issue> issues;
+			final Map<String, List<Change>> changes = new TreeMap<>();
 			{
 				final List<Issue> relevantIssues = findRelevantIssues(client, request.getJql(), request.getUsers().keySet(), request.getStart(), request.getEnd());
 				issues = relevantIssues.stream().collect(Collectors.toMap(Issue::getKey, IFunction1.identity(), (i0, i1) -> i0));
 			}
 			log.info("Found: {}", issues.keySet().stream().collect(HCollector.joining(", ", ", & ")));
 			for (Issue issue : issues.values()) {
-				examineIssue(client, server, request, isComponentBillable, issue, billBuilder);
+				changes.put(issue.getKey(), examineIssue(client, server, request, isStatusBillable, isComponentBillable, userToFriendly, issue, billBuilder));
 			}
 
 			final Bill bill = billBuilder.build();
@@ -268,7 +272,25 @@ public class Billing implements IStandardCommand {
 					final String summary = issues.get(issue).getSummary();
 					final double hours = Math.round(byIssue.getTotal() * 100.0) / 100.0;
 					log.info("\t\t{} {}: {}h", issue, summary, hours);
-					billLines.add(new BillLine(component, issue, summary, hours));
+
+					final String assignees = byIssue.getUsers().stream().collect(HCollector.joining(", ", ", & "));
+					final String link = server.getApi().createIssueLink(issue);
+					final StringBuilder ranges = new StringBuilder();
+					final List<Change> issueChanges = changes.get(issue);
+
+					boolean currentBillable = false;
+					for (int i = 0; i < issueChanges.size(); i++) {
+						final Change change = issueChanges.get(i);
+						final boolean newBillable = isStatusBillable.test(change.getStatus());
+						if (newBillable != currentBillable) {
+							currentBillable = newBillable;
+							final ZoneId zone = change.getAssignee() == null ? ZoneId.systemDefault() : request.getUsers().get(change.getAssignee()).getZone();
+							final LocalDateTime local = change.getStart().withZoneSameInstant(zone).toLocalDateTime();
+							ranges.append(RANGE_FORMAT.format(local)).append(" (@").append(change.getAssignee() == null ? zone : change.getAssignee()).append(')');
+							ranges.append(' ').append(((issueChanges.size() - 1) == i) ? "End" : (newBillable ? "Start" : "Stop")).append('\n');
+						}
+					}
+					billLines.add(new BillLine(component, assignees, issue, summary, hours, ranges.toString().strip(), link));
 				}
 			}
 			final Path outputFile = Filename.replaceExtension(arguments.getRequest(), "csv");
