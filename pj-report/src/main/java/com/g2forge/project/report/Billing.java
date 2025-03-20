@@ -192,7 +192,7 @@ public class Billing implements IStandardCommand {
 				final SearchResult searchResult = client.getSearchClient().searchJql(jql, max, base, null).get();
 				log.info("Got issues {} to {} of {}", base, base + Math.min(searchResult.getMaxResults(), searchResult.getTotal() - base), searchResult.getTotal());
 
-				retVal.addAll(HCollection.asList(searchResult.getIssues()));
+				retVal.addAll(HCollection.asListIterable(searchResult.getIssues()));
 				if ((base + max) >= searchResult.getTotal()) break;
 				else base += max;
 			}
@@ -212,7 +212,7 @@ public class Billing implements IStandardCommand {
 			final List<Issue> relevantIssues = findRelevantIssues(client, request.getUsers().keySet(), request.getStart(), request.getEnd());
 			log.info("Found: {}", relevantIssues.stream().map(Issue::getKey).collect(HCollector.joining(", ", ", & ")));
 			for (Issue issue : relevantIssues) {
-				final Set<String> components = HCollection.asList(issue.getComponents()).stream().map(BasicComponent::getName).collect(Collectors.toSet());
+				final Set<String> components = HCollection.asListIterable(issue.getComponents()).stream().map(BasicComponent::getName).collect(Collectors.toSet());
 				final Set<String> billableComponents = HCollection.intersection(components, request.getBillableComponents());
 				if (billableComponents.isEmpty()) continue;
 
