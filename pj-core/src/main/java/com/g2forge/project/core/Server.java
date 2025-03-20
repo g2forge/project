@@ -1,4 +1,4 @@
-package com.g2forge.project.plan.create;
+package com.g2forge.project.core;
 
 import java.util.Map;
 
@@ -6,6 +6,7 @@ import com.g2forge.gearbox.jira.JiraAPI;
 import com.g2forge.gearbox.jira.fields.Field;
 import com.g2forge.gearbox.jira.fields.IFieldConfig;
 import com.g2forge.gearbox.jira.fields.KnownField;
+import com.g2forge.gearbox.jira.user.UserPrimaryKey;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -24,5 +25,11 @@ public class Server implements IFieldConfig {
 	@Singular
 	protected final Map<String, String> users;
 
+	protected final UserPrimaryKey userPrimaryKey;
+
 	protected final JiraAPI api;
+
+	public UserPrimaryKey getUserPrimaryKey() {
+		return userPrimaryKey == null ? UserPrimaryKey.NAME : userPrimaryKey;
+	}
 }
