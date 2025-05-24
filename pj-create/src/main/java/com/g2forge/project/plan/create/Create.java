@@ -215,10 +215,10 @@ public class Create implements IStandardCommand {
 
 	protected final Map<String, Map<String, BasicComponent>> projectComponentsCache = new LinkedHashMap<>();
 
-	public List<String> createIssues(IDataSource serverDataSource, IDataSource configDataSource) throws JsonParseException, JsonMappingException, IOException, URISyntaxException, InterruptedException, ExecutionException {
+	public Map<String, String> createIssues(IDataSource serverDataSource, IDataSource configDataSource) throws JsonParseException, JsonMappingException, IOException, URISyntaxException, InterruptedException, ExecutionException {
 		// Load the config, but if it's empty, don't bother
 		final CreateConfig config = HConfig.load(configDataSource, CreateConfig.class);
-		if ((config.getIssues() == null) || config.getIssues().isEmpty()) return Collections.emptyList();
+		if ((config.getIssues() == null) || config.getIssues().isEmpty()) return Collections.emptyMap();
 
 		// Load the server if one is specified;
 		final Server server = (serverDataSource != null) ? HConfig.load(serverDataSource, Server.class) : null;
@@ -245,7 +245,8 @@ public class Create implements IStandardCommand {
 		});
 	}
 
-	protected List<String> implementChanges(Server server, Changes changes) throws IOException, URISyntaxException, InterruptedException, ExecutionException {
+	protected Map<String, String> implementChanges(Server server, Changes changes) throws IOException, URISyntaxException, InterruptedException, ExecutionException {
+		final boolean dryrun = ProjectCreateFlag.DRYRUN.getAccessor().get();
 		HLog.getLogControl().setLogLevel(Level.INFO);
 		try (final ExtendedJiraRestClient client = JiraAPI.createFromPropertyInput(server == null ? null : server.getApi(), null).connect(true)) {
 			final Map<String, LinkType> linkTypes = new HashMap<>();
@@ -283,43 +284,46 @@ public class Create implements IStandardCommand {
 				}
 				if ((issue.getLabels() != null) && !issue.getLabels().isEmpty()) builder.setFieldInput(new FieldInput(IssueFieldId.LABELS_FIELD, issue.getLabels()));
 
-				BasicIssue created = null;
-				{
-					final List<Throwable> throwables = new ArrayList<>();
-					for (int i = 0; i < 5; i++) {
-						final Promise<BasicIssue> promise = issueClient.createIssue(builder.build());
-						try {
-							created = promise.get();
-						} catch (ExecutionException e) {
-							throwables.add(e);
-							continue;
+				if (dryrun) issues.put(issue.getSummary(), "DRYRUN");
+				else {
+					BasicIssue created = null;
+					{
+						final List<Throwable> throwables = new ArrayList<>();
+						for (int i = 0; i < 5; i++) {
+							final Promise<BasicIssue> promise = issueClient.createIssue(builder.build());
+							try {
+								created = promise.get();
+							} catch (ExecutionException e) {
+								throwables.add(e);
+								continue;
+							}
+							issues.put(issue.getSummary(), created.getKey());
+							throwables.clear();
+							break;
 						}
-						issues.put(issue.getSummary(), created.getKey());
-						throwables.clear();
-						break;
+						if (!throwables.isEmpty()) HError.withSuppressed(new RuntimeException(String.format("Failed to create issue: %1$s", issue.getSummary())), throwables).printStackTrace(System.err);
 					}
-					if (!throwables.isEmpty()) HError.withSuppressed(new RuntimeException(String.format("Failed to create issue: %1$s", issue.getSummary())), throwables).printStackTrace(System.err);
-				}
 
-				final String transitionName = issue.getTransition();
-				if (transitionName != null) {
-					final List<Throwable> throwables = new ArrayList<>();
-					for (int i = 0; i < 5; i++) {
-						try {
-							final Issue actualIssue = issueClient.getIssue(created.getKey()).get();
-							final Iterable<Transition> transitions = issueClient.getTransitions(actualIssue).get();
-							final Transition transition = StreamSupport.stream(transitions.spliterator(), false).filter(t -> Objects.equal(t.getName(), transitionName)).findFirst().orElse(null);
-							issueClient.transition(actualIssue, new TransitionInput(transition.getId())).get();
-						} catch (ExecutionException e) {
-							throwables.add(e);
-							continue;
+					final String transitionName = issue.getTransition();
+					if (transitionName != null) {
+						final List<Throwable> throwables = new ArrayList<>();
+						for (int i = 0; i < 5; i++) {
+							try {
+								final Issue actualIssue = issueClient.getIssue(created.getKey()).get();
+								final Iterable<Transition> transitions = issueClient.getTransitions(actualIssue).get();
+								final Transition transition = StreamSupport.stream(transitions.spliterator(), false).filter(t -> Objects.equal(t.getName(), transitionName)).findFirst().orElse(null);
+								issueClient.transition(actualIssue, new TransitionInput(transition.getId())).get();
+							} catch (ExecutionException e) {
+								throwables.add(e);
+								continue;
+							}
 						}
+						if (!throwables.isEmpty()) HError.withSuppressed(new RuntimeException(String.format("Failed to transition issue: %1$s %2$s", created.getKey(), issue.getSummary())), throwables).printStackTrace(System.err);
 					}
-					if (!throwables.isEmpty()) HError.withSuppressed(new RuntimeException(String.format("Failed to transition issue: %1$s %2$s", created.getKey(), issue.getSummary())), throwables).printStackTrace(System.err);
 				}
 			}
 
-			for (LinkIssuesInput link : changes.getLinks()) {
+			if (!dryrun) for (LinkIssuesInput link : changes.getLinks()) {
 				final LinkType linkType = linkTypes.get(link.getLinkType());
 				final String from = issues.get(link.getFromIssueKey());
 				final String to = issues.getOrDefault(link.getToIssueKey(), link.getToIssueKey());
@@ -327,7 +331,7 @@ public class Create implements IStandardCommand {
 				issueClient.linkIssue(new LinkIssuesInput(linkType.isReverse() ? to : from, linkType.isReverse() ? from : to, linkType.getName(), link.getComment())).get();
 			}
 
-			return new ArrayList<>(issues.values());
+			return issues;
 		}
 	}
 
@@ -337,8 +341,7 @@ public class Create implements IStandardCommand {
 		final boolean hasServer = invocation.getArguments().size() > 1;
 		final IDataSource server = hasServer ? new PathDataSource(Paths.get(invocation.getArguments().get(0))) : null;
 		final IDataSource config = new PathDataSource(Paths.get(invocation.getArguments().get(hasServer ? 1 : 0)));
-		createIssues(server, config).forEach(System.out::println);
+		createIssues(server, config).entrySet().forEach(entry -> System.out.println(String.format("%1$s %2$s", entry.getValue(), entry.getKey())));
 		return IStandardCommand.SUCCESS;
 	}
-
 }
