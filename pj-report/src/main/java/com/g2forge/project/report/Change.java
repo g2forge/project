@@ -21,15 +21,40 @@ import lombok.RequiredArgsConstructor;
 @Builder(toBuilder = true)
 @RequiredArgsConstructor
 public class Change {
-	protected final ZonedDateTime start;
+	/**
+	 * Back propagate the from assignee and status for a newly found change log to a previous change. This allows each change to have from "from" and "to"
+	 * information. This is made slightly more complex because not every change affects assignee, and not ever change affects status.
+	 * 
+	 * @param retVal The list of changes being built up.
+	 * @param fromAssignee The "from" assignee of the newly found change.
+	 * @param fromStatus The "from" status of the newly found change.
+	 */
+	protected static void backPropagate(final List<Change> retVal, String fromAssignee, String fromStatus) {
+		for (int i = retVal.size() - 1; i >= 0; i--) {
+			final Change prev = retVal.get(i);
+			if ((prev.getAssignee() != null) && (prev.getStatus() != null)) break;
+			if ((fromAssignee == null) && (fromStatus == null)) break;
 
-	protected final String assignee;
-
-	protected final String status;
+			final Change.ChangeBuilder builder = prev.toBuilder();
+			if (fromAssignee != null) {
+				if (prev.getAssignee() == null) builder.assignee(fromAssignee);
+				else if (!prev.getAssignee().equals(fromAssignee)) {
+					throw new IllegalArgumentException("Cannot back propogate change to assignee to change at " + prev.getStart() + ", because previous assignee (" + fromAssignee + ") does not match expected previous assignee (" + prev.getAssignee() + ")");
+				} else fromAssignee = null;
+			}
+			if (fromStatus != null) {
+				if (prev.getStatus() == null) builder.status(fromStatus);
+				else if (!prev.getStatus().equals(fromStatus)) {
+					throw new IllegalArgumentException("Cannot back propogate change to status to change at " + prev.getStart() + ", because previous status (" + fromStatus + ") does not match expected previous status (" + prev.getStatus() + ")");
+				} else fromStatus = null;
+			}
+			retVal.set(i, builder.build());
+		}
+	}
 
 	public static List<Change> toChanges(final Iterable<ChangelogGroup> changelog, ZonedDateTime start, ZonedDateTime end, String assignee, String status, IFunction1<String, String> assigneeResolver) {
 		final List<Change> retVal = new ArrayList<>();
-		String finalAssignee = assignee, finalStatus = status;
+		String finalAssignee = assignee, finalStatus = status, prevFromStatus = null, prevToStatus = null;
 		boolean foundFinalAssignee = false, foundFinalStatus = false;
 		final List<ChangelogGroup> sorted = HCollection.asListIterable(changelog).stream().sorted(new MappedComparator<>(ChangelogGroup::getCreated, ComparableComparator.create())).collect(Collectors.toList());
 		for (ChangelogGroup changelogGroup : sorted) {
@@ -50,6 +75,9 @@ public class Change {
 				}
 			}
 
+			// Skip duplicate status changes, which are generally caused by adjustments
+			if ((toAssignee == null) && (toStatus != null) && (prevFromStatus != null) && prevFromStatus.equals(fromStatus) && prevToStatus.equals(toStatus)) continue;
+
 			// IF the status changed (not all change log groups include a chance to the status), then...
 			if ((toAssignee != null) || (toStatus != null)) {
 				if (created.isAfter(end)) {
@@ -65,28 +93,39 @@ public class Change {
 				} else {
 					// If this is the first change, record the starting info, otherwise back propagate any new information we just learned
 					if (retVal.isEmpty()) retVal.add(new Change(start, fromAssignee, fromStatus));
-					else backPropagate(retVal, fromAssignee, fromStatus);
+					else {
+						try {
+							backPropagate(retVal, fromAssignee, fromStatus);
+						} catch (Throwable throwable) {
+							throw new RuntimeException("Failed to backpropogate information about changelog group at " + changelogGroup.getCreated() + " by " + (changelogGroup.getAuthor() != null ? changelogGroup.getAuthor().getDisplayName() : "No Author"), throwable);
+						}
+					}
 					retVal.add(new Change(created, toAssignee, toStatus));
 				}
+			}
+
+			if (toStatus != null) {
+				prevFromStatus = fromStatus;
+				prevToStatus = toStatus;
 			}
 		}
 		// Add a start marker if we didn't get a chance to already
 		if (retVal.isEmpty()) retVal.add(new Change(start, finalAssignee, finalStatus));
-		else backPropagate(retVal, finalAssignee, finalStatus);
+		else {
+			try {
+				backPropagate(retVal, finalAssignee, finalStatus);
+			} catch (Throwable throwable) {
+				throw new RuntimeException("Failed to backpropogate information for final assignee and status", throwable);
+			}
+		}
 		// Add an end marker if we didn't get a chance at exactly the right time
 		if (!retVal.get(retVal.size() - 1).getStart().isEqual(end)) retVal.add(new Change(end, finalAssignee, finalStatus));
 		return retVal;
 	}
 
-	protected static void backPropagate(final List<Change> retVal, String fromAssignee, String fromStatus) {
-		for (int i = retVal.size() - 1; i >= 0; i--) {
-			final Change prev = retVal.get(i);
-			if (prev.getAssignee() != null && prev.getStatus() != null) break;
+	protected final ZonedDateTime start;
 
-			final Change.ChangeBuilder builder = prev.toBuilder();
-			if (prev.getAssignee() == null) builder.assignee(fromAssignee);
-			if (prev.getStatus() == null) builder.status(fromStatus);
-			retVal.set(i, builder.build());
-		}
-	}
+	protected final String assignee;
+
+	protected final String status;
 }

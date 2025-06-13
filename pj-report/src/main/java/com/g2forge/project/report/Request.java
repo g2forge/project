@@ -1,6 +1,7 @@
 package com.g2forge.project.report;
 
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Map;
 import java.util.Set;
 
@@ -27,4 +28,8 @@ public class Request {
 	protected final LocalDate start;
 
 	protected final LocalDate end;
+
+	public ZoneId getZone(String user) {
+		return user == null ? ZoneId.systemDefault() : getUsers().get(user).getZone();
+	}
 }

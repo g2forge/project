@@ -31,43 +31,49 @@ public class TestChange {
 	}
 
 	@Test
-	public void testToChangesAllAfter() {
+	public void toChangesAllAfter() {
 		final List<Change> actual = Change.toChanges(HCollection.asList(changeStatus(END_PLUS20, "State", "Ignored")), START, END, "user", "Ignored", IFunction1.identity());
 		HAssert.assertEquals(HCollection.asList(new Change(START, "user", "State"), new Change(END, "user", "State")), actual);
 	}
 
 	@Test
-	public void testToChangesDoubleAfter() {
+	public void toChangesDoubleAfter() {
 		final List<Change> actual = Change.toChanges(HCollection.asList(changeStatus(END_PLUS20, "State", "Ignored1"), changeStatus(END_PLUS40, "Ignored1", "Ignored2")), START, END, "user", "Ignored", IFunction1.identity());
 		HAssert.assertEquals(HCollection.asList(new Change(START, "user", "State"), new Change(END, "user", "State")), actual);
 	}
 
 	@Test
-	public void testToChangesAllBefore() {
+	public void toChangesAllBefore() {
 		final List<Change> actual = Change.toChanges(HCollection.asList(changeStatus(START_MINUS20, "Ignored", "State")), START, END, "user", "State", IFunction1.identity());
 		HAssert.assertEquals(HCollection.asList(new Change(START, "user", "State"), new Change(END, "user", "State")), actual);
 	}
 
 	@Test
-	public void testToChangesEmpty() {
+	public void toChangesEmpty() {
 		final List<Change> actual = Change.toChanges(HCollection.emptyList(), START, END, "user", "State", IFunction1.identity());
 		HAssert.assertEquals(HCollection.asList(new Change(START, "user", "State"), new Change(END, "user", "State")), actual);
 	}
 
 	@Test
-	public void testToChangesOne() {
+	public void toChangesOne() {
 		final List<Change> actual = Change.toChanges(HCollection.asList(changeStatus(START_PLUS15, "Initial", "Final")), START, END, "user", "Final", IFunction1.identity());
 		HAssert.assertEquals(HCollection.asList(new Change(START, "user", "Initial"), new Change(START_PLUS15, "user", "Final"), new Change(END, "user", "Final")), actual);
 	}
 
 	@Test
-	public void testToChangesThree() {
+	public void toChangesAdjusted() {
+		final List<Change> actual = Change.toChanges(HCollection.asList(changeStatus(START_PLUS15, "Initial", "Final"), changeStatus(START_PLUS30, "Initial", "Final")), START, END, "user", "Final", IFunction1.identity());
+		HAssert.assertEquals(HCollection.asList(new Change(START, "user", "Initial"), new Change(START_PLUS15, "user", "Final"), new Change(END, "user", "Final")), actual);
+	}
+
+	@Test
+	public void toChangesThree() {
 		final List<Change> actual = Change.toChanges(HCollection.asList(changeStatus(START_PLUS15, "Initial", "Middle"), changeAssignee(START_PLUS30, "user1", "user2"), changeStatus(START_PLUS45, "Middle", "Final")), START, END, "user2", "Final", IFunction1.identity());
 		HAssert.assertEquals(HCollection.asList(new Change(START, "user1", "Initial"), new Change(START_PLUS15, "user1", "Middle"), new Change(START_PLUS30, "user2", "Middle"), new Change(START_PLUS45, "user2", "Final"), new Change(END, "user2", "Final")), actual);
 	}
 
 	@Test
-	public void testToChangesTwo() {
+	public void toChangesTwo() {
 		final List<Change> actual = Change.toChanges(HCollection.asList(changeStatus(START_PLUS15, "Initial", "Middle"), changeStatus(START_PLUS45, "Middle", "Final")), START, END, "user", "Final", IFunction1.identity());
 		HAssert.assertEquals(HCollection.asList(new Change(START, "user", "Initial"), new Change(START_PLUS15, "user", "Middle"), new Change(START_PLUS45, "user", "Final"), new Change(END, "user", "Final")), actual);
 	}

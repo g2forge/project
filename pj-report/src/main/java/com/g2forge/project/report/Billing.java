@@ -11,6 +11,7 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -25,6 +26,9 @@ import org.slf4j.event.Level;
 import com.atlassian.jira.rest.client.api.IssueRestClient;
 import com.atlassian.jira.rest.client.api.domain.BasicComponent;
 import com.atlassian.jira.rest.client.api.domain.ChangelogGroup;
+import com.atlassian.jira.rest.client.api.domain.ChangelogItem;
+import com.atlassian.jira.rest.client.api.domain.Comment;
+import com.atlassian.jira.rest.client.api.domain.FieldType;
 import com.atlassian.jira.rest.client.api.domain.Issue;
 import com.atlassian.jira.rest.client.api.domain.SearchResult;
 import com.atlassian.jira.rest.client.api.domain.User;
@@ -47,6 +51,7 @@ import com.g2forge.alexandria.path.path.filename.Filename;
 import com.g2forge.gearbox.argparse.ArgumentParser;
 import com.g2forge.gearbox.jira.ExtendedJiraRestClient;
 import com.g2forge.gearbox.jira.JiraAPI;
+import com.g2forge.gearbox.jira.fields.KnownField;
 import com.g2forge.project.core.HConfig;
 import com.g2forge.project.core.Server;
 
@@ -176,9 +181,20 @@ public class Billing implements IStandardCommand {
 
 	protected final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy/MM/dd");
 
-	protected List<Change> computeChanges(ExtendedJiraRestClient client, Server server, IFunction1<User, String> userToFriendly, String issueKey, ZonedDateTime start, ZonedDateTime end) throws InterruptedException, ExecutionException {
+	protected List<Change> computeChanges(ExtendedJiraRestClient client, Server server, Request request, IFunction1<User, String> userToFriendly, String issueKey, ZonedDateTime start, ZonedDateTime end) throws InterruptedException, ExecutionException {
 		final Issue issue = client.getIssueClient().getIssue(issueKey, HCollection.asList(IssueRestClient.Expandos.CHANGELOG)).get();
-		final Iterable<ChangelogGroup> changelog = issue.getChangelog();
+		final List<ChangelogGroup> changelog = new ArrayList<>(HCollection.asListIterable(issue.getChangelog()));
+		for (Comment comment : issue.getComments()) {
+			final String body = comment.getBody();
+			final List<StatusAdjustment> adjustments = StatusAdjustment.parse(body);
+			if (!adjustments.isEmpty()) {
+				final ZoneId zone = request.getZone(comment.getAuthor().getName());
+				for (StatusAdjustment adjustment : adjustments) {
+					final ZonedDateTime when = adjustment.getWhen().atZone(zone);
+					changelog.add(new ChangelogGroup(comment.getAuthor(), convert(when), HCollection.asList(new ChangelogItem(FieldType.JIRA, KnownField.Status.getName(), adjustment.getFrom(), adjustment.getFrom(), adjustment.getTo(), adjustment.getTo()))));
+				}
+			}
+		}
 
 		final IFunction1<String, String> users = new Cache<>(primaryKey -> {
 			if (primaryKey == null) return null;
@@ -217,7 +233,7 @@ public class Billing implements IStandardCommand {
 		final Set<String> billableComponents = HCollection.asListIterable(issue.getComponents()).stream().map(BasicComponent::getName).distinct().filter(isComponentBillable).collect(Collectors.toSet());
 		if (billableComponents.isEmpty()) return null;
 
-		final List<Change> changes = computeChanges(client, server, userToFriendly, issue.getKey(), request.getStart().atStartOfDay(ZoneId.systemDefault()), request.getEnd().atStartOfDay(ZoneId.systemDefault()));
+		final List<Change> changes = computeChanges(client, server, request, userToFriendly, issue.getKey(), request.getStart().atStartOfDay(ZoneId.systemDefault()), request.getEnd().atStartOfDay(ZoneId.systemDefault()));
 		final Map<String, Double> billableHoursByUser = computeBillableHoursByUser(changes, isStatusBillable, request.getUsers()::get);
 		final Map<String, Double> billableHoursByUserDividedByComponents = billableHoursByUser.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue() / billableComponents.size()));
 		for (String billableComponent : billableComponents) {
@@ -228,7 +244,7 @@ public class Billing implements IStandardCommand {
 		return changes;
 	}
 
-	protected static final DateTimeFormatter RANGE_FORMAT = DateTimeFormatter.ofPattern("yyyy/MM/dd/ HH:mm:ss");
+	public static final DateTimeFormatter DATETIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm[:ss]");
 
 	@Override
 	public IExit invoke(CommandInvocation<InputStream, PrintStream> invocation) throws Throwable {
@@ -257,8 +273,14 @@ public class Billing implements IStandardCommand {
 				issues = relevantIssues.stream().collect(Collectors.toMap(Issue::getKey, IFunction1.identity(), (i0, i1) -> i0));
 			}
 			log.info("Found: {}", issues.keySet().stream().collect(HCollector.joining(", ", ", & ")));
+			final Map<Issue, Throwable> errors = new LinkedHashMap<>();
 			for (Issue issue : issues.values()) {
-				changes.put(issue.getKey(), examineIssue(client, server, request, isStatusBillable, isComponentBillable, userToFriendly, issue, billBuilder));
+				try {
+					changes.put(issue.getKey(), examineIssue(client, server, request, isStatusBillable, isComponentBillable, userToFriendly, issue, billBuilder));
+				} catch (Throwable throwable) {
+					log.error("Failed to incorporate {} into billing report: {}", issue.getKey(), throwable);
+					errors.put(issue, throwable);
+				}
 			}
 
 			final Bill bill = billBuilder.build();
@@ -284,9 +306,9 @@ public class Billing implements IStandardCommand {
 						final boolean newBillable = isStatusBillable.test(change.getStatus());
 						if (newBillable != currentBillable) {
 							currentBillable = newBillable;
-							final ZoneId zone = change.getAssignee() == null ? ZoneId.systemDefault() : request.getUsers().get(change.getAssignee()).getZone();
+							final ZoneId zone = request.getZone(change.getAssignee());
 							final LocalDateTime local = change.getStart().withZoneSameInstant(zone).toLocalDateTime();
-							ranges.append(RANGE_FORMAT.format(local)).append(" (@").append(change.getAssignee() == null ? zone : change.getAssignee()).append(')');
+							ranges.append(DATETIME_FORMAT.format(local)).append(" (@").append(change.getAssignee() == null ? zone : change.getAssignee()).append(')');
 							ranges.append(' ').append(((issueChanges.size() - 1) == i) ? "End" : (newBillable ? "Start" : "Stop")).append('\n');
 						}
 					}
@@ -307,6 +329,13 @@ public class Billing implements IStandardCommand {
 				}
 			}
 
+			if (!errors.isEmpty()) {
+				log.error("One or more issues could not be incorporated into the report (please see above for complete errors):");
+				for (Map.Entry<Issue, Throwable> entry : errors.entrySet()) {
+					log.error("\t{}: {}", entry.getKey().getKey(), entry.getValue().getMessage());
+				}
+				return IStandardCommand.FAIL;
+			}
 		}
 
 		// TODO: Report on any times where a person was not billing to anything, but was working
