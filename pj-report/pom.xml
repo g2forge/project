@@ -29,5 +29,10 @@
 			<artifactId>gb-csv</artifactId>
 			<version>${gearbox.version}</version>
 		</dependency>
+		<dependency>
+			<groupId>com.g2forge.alexandria</groupId>
+			<artifactId>ax-parse</artifactId>
+			<version>${alexandria.version}</version>
+		</dependency>
 	</dependencies>
 </project>
