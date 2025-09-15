@@ -272,7 +272,7 @@ public class Billing implements IStandardCommand {
 				final List<Issue> relevantIssues = findRelevantIssues(client, request.getJql(), request.getUsers().keySet(), request.getStart(), request.getEnd());
 				issues = relevantIssues.stream().collect(Collectors.toMap(Issue::getKey, IFunction1.identity(), (i0, i1) -> i0));
 			}
-			log.info("Found: {}", issues.keySet().stream().collect(HCollector.joining(", ", ", & ")));
+			log.info("Found: {}", issues.keySet().stream().collect(HCollector.joiningHuman()));
 			final Map<Issue, Throwable> errors = new LinkedHashMap<>();
 			for (Issue issue : issues.values()) {
 				try {
@@ -295,7 +295,7 @@ public class Billing implements IStandardCommand {
 					final double hours = Math.round(byIssue.getTotal() * 100.0) / 100.0;
 					log.info("\t\t{} {}: {}h", issue, summary, hours);
 
-					final String assignees = byIssue.getUsers().stream().collect(HCollector.joining(", ", ", & "));
+					final String assignees = byIssue.getUsers().stream().collect(HCollector.joiningHuman());
 					final String link = server.getApi().createIssueLink(issue);
 					final StringBuilder ranges = new StringBuilder();
 					final List<Change> issueChanges = changes.get(issue);
