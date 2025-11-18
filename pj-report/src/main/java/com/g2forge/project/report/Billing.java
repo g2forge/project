@@ -179,7 +179,7 @@ public class Billing implements IStandardCommand {
 		IStandardCommand.main(args, new Billing());
 	}
 
-	protected final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy/MM/dd");
+	protected static final DateTimeFormatter DATE_FORMAT_SLASH = DateTimeFormatter.ofPattern("yyyy/MM/dd");
 
 	protected List<Change> computeChanges(ExtendedJiraRestClient client, Server server, Request request, IFunction1<User, String> userToFriendly, String issueKey, ZonedDateTime start, ZonedDateTime end) throws InterruptedException, ExecutionException {
 		final Issue issue = client.getIssueClient().getIssue(issueKey, HCollection.asList(IssueRestClient.Expandos.CHANGELOG)).get();
@@ -212,17 +212,19 @@ public class Billing implements IStandardCommand {
 		final List<Issue> retVal = new ArrayList<>();
 		for (String user : users) {
 			log.info("Finding issues for {}", user);
-			final String compositeJQL = String.format("issuekey IN updatedBy(%1$s, \"%2$s\", \"%3$s\")", user, start.format(DATE_FORMAT), end.format(DATE_FORMAT)) + ((jql == null) ? "" : (" AND " + jql));
-			final int desiredMax = 500;
-			int base = 0;
+			final String compositeJQL = String.format("issuekey IN updatedBy(%1$s, \"%2$s\", \"%3$s\")", user, start.format(DATE_FORMAT_SLASH), end.format(DATE_FORMAT_SLASH)) + ((jql == null) ? "" : (" AND " + jql));
+			final int desiredMax = 5000;
+			int currentIssuesPerUser = 0;
+			String nextPageToken = null;
 			while (true) {
-				final SearchResult searchResult = client.getSearchClient().searchJql(compositeJQL, desiredMax, base, null).get();
-				final int actualMax = searchResult.getMaxResults();
-				log.info("\tGot issues {} to {} of {}", base, base + Math.min(actualMax, searchResult.getTotal() - base), searchResult.getTotal());
-
-				retVal.addAll(HCollection.asListIterable(searchResult.getIssues()));
-				if ((base + actualMax) >= searchResult.getTotal()) break;
-				else base += actualMax;
+				final SearchResult searchResult = client.getSearchClient().enhancedSearchJql(compositeJQL, desiredMax, nextPageToken, HCollection.asSet("*all"), null).get();
+				final List<Issue> issues = HCollection.asListIterable(searchResult.getIssues());
+				retVal.addAll(issues);
+				nextPageToken = searchResult.getNextPageToken();
+				currentIssuesPerUser += issues.size();
+				log.info("\tFound {} ({}) issues, {}", issues.size(), currentIssuesPerUser, nextPageToken == null ? "none remaining" : "more coming");
+				retVal.addAll(issues);
+				if (nextPageToken == null) break;
 			}
 		}
 		return retVal;
@@ -245,6 +247,8 @@ public class Billing implements IStandardCommand {
 	}
 
 	public static final DateTimeFormatter DATETIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm[:ss]");
+
+	public static final DateTimeFormatter DATE_FORMAT_DASH = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
 	@Override
 	public IExit invoke(CommandInvocation<InputStream, PrintStream> invocation) throws Throwable {
@@ -315,7 +319,8 @@ public class Billing implements IStandardCommand {
 					billLines.add(new BillLine(component, assignees, issue, summary, hours, ranges.toString().strip(), link));
 				}
 			}
-			final Path outputFile = Filename.replaceExtension(arguments.getRequest(), "csv");
+
+			final Path outputFile = arguments.getRequest().getParent().resolve(Filename.fromPath(arguments.getRequest()).getFirst() + " " + DATE_FORMAT_DASH.format(request.getStart()) + " - " + DATE_FORMAT_DASH.format(request.getEnd()) + ".csv");
 			log.info("Writing bill to {}", outputFile);
 			BillLine.getMapper().write(billLines, outputFile);
 
