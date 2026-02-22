@@ -1,6 +1,6 @@
 package com.g2forge.project.report;
 
-import com.g2forge.gearbox.csv.CSVMapper;
+import com.g2forge.gearbox.serdes.csv.CSVMapper;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
