@@ -26,8 +26,13 @@
 		</dependency>
 		<dependency>
 			<groupId>com.g2forge.gearbox</groupId>
-			<artifactId>gb-csv</artifactId>
+			<artifactId>gb-serdes</artifactId>
 			<version>${gearbox.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>com.fasterxml.jackson.dataformat</groupId>
+			<artifactId>jackson-dataformat-csv</artifactId>
+			<version>${jackson.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>com.g2forge.alexandria</groupId>
