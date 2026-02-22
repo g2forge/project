@@ -70,6 +70,7 @@
 							<name>gearbox.version</name>
 							<dependencies>
 								<dependency>
+									<groupId>com.g2forge.gearbox</groupId>
 									<artifactId>gearbox</artifactId>
 								</dependency>
 							</dependencies>
