@@ -13,6 +13,9 @@
 		<relativePath>../pj-project/pom.xml</relativePath>
 	</parent>
 
+	<name>Project Create</name>
+	<description>Commands for creating projects and tasks</description>
+
 	<dependencies>
 		<dependency>
 			<groupId>com.g2forge.project</groupId>

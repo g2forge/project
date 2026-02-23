@@ -13,6 +13,9 @@
 		<relativePath>../pj-project/pom.xml</relativePath>
 	</parent>
 
+	<name>Project Core</name>
+	<description>Project core</description>
+
 	<dependencies>
 		<dependency>
 			<groupId>com.g2forge.gearbox</groupId>

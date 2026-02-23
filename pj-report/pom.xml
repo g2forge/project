@@ -13,6 +13,9 @@
 		<relativePath>../pj-project/pom.xml</relativePath>
 	</parent>
 
+	<name>Project Report</name>
+	<description>Commands for reporting on projects</description>
+
 	<dependencies>
 		<dependency>
 			<groupId>com.g2forge.project</groupId>

@@ -12,7 +12,10 @@
 		<version>0.0.1-SNAPSHOT</version>
 		<relativePath>../pj-project/pom.xml</relativePath>
 	</parent>
-	
+
+	<name>Project Plan</name>
+	<description>Commands for project planning</description>
+
 	<properties>
 		<poi.version>5.2.5</poi.version>
 	</properties>
