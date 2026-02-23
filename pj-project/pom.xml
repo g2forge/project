@@ -5,7 +5,7 @@
 	<groupId>com.g2forge.project</groupId>
 	<artifactId>pj-project</artifactId>
 	<packaging>pom</packaging>
-	<version>0.0.1</version>
+	<version>0.0.2-SNAPSHOT</version>
 
 	<parent>
 		<groupId>com.g2forge.alexandria</groupId>
@@ -49,7 +49,7 @@
 			scm:git:ssh://github.com:${project.organization}/${project.repository}.git</developerConnection>
 		<url>
 			http://github.com/${project.organization}/${project.repository}/tree/${project.version}</url>
-	  <tag>0.0.1</tag>
+	  <tag>HEAD</tag>
   </scm>
 
 	<build>
