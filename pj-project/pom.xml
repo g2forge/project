@@ -3,28 +3,28 @@
 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
-	
+
 	<groupId>com.g2forge.project</groupId>
 	<artifactId>pj-project</artifactId>
 	<packaging>pom</packaging>
 	<version>0.0.1-SNAPSHOT</version>
-	
+
 	<parent>
 		<groupId>com.g2forge.alexandria</groupId>
 		<artifactId>ax-project</artifactId>
 		<version>0.0.19-SNAPSHOT</version>
 		<relativePath></relativePath>
 	</parent>
-	
+
 	<properties>
 		<alexandria.version>0.0.19-SNAPSHOT</alexandria.version>
 		<gearbox.version>0.0.10-SNAPSHOT</gearbox.version>
-		
+
 		<project.organization>g2forge</project.organization>
 		<project.name>project</project.name>
 		<project.repository>project</project.repository>
 	</properties>
-	
+
 	<name>project Project</name>
 	<description>Parent project for project.</description>
 	<url>
@@ -40,15 +40,19 @@
 	<licenses>
 		<license>
 			<name>The Apache License, Version 2.0</name>
-			<url>https://github.com/${project.organization}/${project.repository}/blob/${project.version}/LICENSE</url>
+			<url>
+				https://github.com/${project.organization}/${project.repository}/blob/${project.version}/LICENSE</url>
 		</license>
 	</licenses>
 	<scm>
-		<connection>scm:git:git://github.com/${project.organization}/${project.repository}.git</connection>
-		<developerConnection>scm:git:ssh://github.com:${project.organization}/${project.repository}.git</developerConnection>
-		<url>http://github.com/${project.organization}/${project.repository}/tree/${project.version}</url>
+		<connection>
+			scm:git:git://github.com/${project.organization}/${project.repository}.git</connection>
+		<developerConnection>
+			scm:git:ssh://github.com:${project.organization}/${project.repository}.git</developerConnection>
+		<url>
+			http://github.com/${project.organization}/${project.repository}/tree/${project.version}</url>
 	</scm>
-	
+
 	<build>
 		<plugins>
 			<plugin>
@@ -80,7 +84,7 @@
 			</plugin>
 		</plugins>
 	</build>
-	
+
 	<profiles>
 		<profile>
 			<id>release-snapshot</id>
