@@ -247,9 +247,9 @@ public class Billing implements IStandardCommand {
 	public static final DateTimeFormatter DATETIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm[:ss]");
 
 	@Override
-	public IExit invoke(CommandInvocation<InputStream, PrintStream> invocation) throws Throwable {
+	public IExit invoke(CommandInvocation<?, InputStream, PrintStream> invocation) throws Throwable {
 		HLog.getLogControl().setLogLevel(Level.INFO);
-		final Arguments arguments = ArgumentParser.parse(Arguments.class, invocation.getArguments());
+		final Arguments arguments = ArgumentParser.parse(Arguments.class, invocation);
 
 		final Server server = HConfig.load(new PathDataSource(arguments.getServer()), Server.class);
 		final Request request = HConfig.load(new PathDataSource(arguments.getRequest()), Request.class);

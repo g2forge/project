@@ -19,10 +19,10 @@ public class Sprints implements IStandardCommand {
 	}
 
 	@Override
-	public IExit invoke(CommandInvocation<InputStream, PrintStream> invocation) throws Throwable {
+	public IExit invoke(CommandInvocation<?, InputStream, PrintStream> invocation) throws Throwable {
 		if (invocation.getArguments().size() != 2) throw new IllegalArgumentException();
-		final long initialSprintId = Long.parseLong(invocation.getArguments().get(0));
-		final int sprintDuration = Integer.parseInt(invocation.getArguments().get(1));
+		final long initialSprintId = Long.parseLong(invocation.getArgumentsAsArguments().get(0).getString());
+		final int sprintDuration = Integer.parseInt(invocation.getArgumentsAsArguments().get(1).getString());
 
 		try (final ExtendedJiraRestClient client = JiraAPI.load().connect(true)) {
 			final SprintRestClient sprintClient = client.getSprintClient();

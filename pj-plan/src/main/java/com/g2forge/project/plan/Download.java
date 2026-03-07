@@ -5,7 +5,6 @@ import java.io.OutputStream;
 import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
@@ -52,10 +51,10 @@ public class Download implements IStandardCommand {
 	}
 
 	@Override
-	public IExit invoke(CommandInvocation<InputStream, PrintStream> invocation) throws Throwable {
+	public IExit invoke(CommandInvocation<?, InputStream, PrintStream> invocation) throws Throwable {
 		HLog.getLogControl().setLogLevel(Level.INFO);
 		if (invocation.getArguments().size() != 1) throw new IllegalArgumentException();
-		final Path inputPath = Paths.get(invocation.getArguments().get(0));
+		final Path inputPath = invocation.getArgumentsAsArguments().get(0).getPath();
 		final ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
 		final Input input = mapper.readValue(inputPath.toFile(), Input.class);
 
