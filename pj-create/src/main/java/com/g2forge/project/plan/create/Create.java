@@ -4,13 +4,13 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintStream;
 import java.net.URISyntaxException;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.regex.Pattern;
@@ -311,8 +311,9 @@ public class Create implements IStandardCommand {
 							try {
 								final Issue actualIssue = issueClient.getIssue(created.getKey()).get();
 								final Iterable<Transition> transitions = issueClient.getTransitions(actualIssue).get();
-								final Transition transition = StreamSupport.stream(transitions.spliterator(), false).filter(t -> Objects.equal(t.getName(), transitionName)).findFirst().orElse(null);
-								issueClient.transition(actualIssue, new TransitionInput(transition.getId())).get();
+								final Optional<Transition> transition = StreamSupport.stream(transitions.spliterator(), false).filter(t -> Objects.equal(t.getName(), transitionName)).findFirst();
+								if (transition.isEmpty()) throw new IllegalArgumentException(String.format("There was no transition named %1$s in Jira, please check that you're using the name of the transition, rather than the desired end state, and update your issue creation config", transitionName));
+								issueClient.transition(actualIssue, new TransitionInput(transition.get().getId())).get();
 							} catch (ExecutionException e) {
 								throwables.add(e);
 								continue;
@@ -336,11 +337,11 @@ public class Create implements IStandardCommand {
 	}
 
 	@Override
-	public IExit invoke(CommandInvocation<InputStream, PrintStream> invocation) throws Throwable {
+	public IExit invoke(CommandInvocation<?, InputStream, PrintStream> invocation) throws Throwable {
 		if (invocation.getArguments().size() < 1 || invocation.getArguments().size() > 2) throw new IllegalArgumentException("You must specify one or two inputs the optional path to server and the path fo the config!");
 		final boolean hasServer = invocation.getArguments().size() > 1;
-		final IDataSource server = hasServer ? new PathDataSource(Paths.get(invocation.getArguments().get(0))) : null;
-		final IDataSource config = new PathDataSource(Paths.get(invocation.getArguments().get(hasServer ? 1 : 0)));
+		final IDataSource server = hasServer ? new PathDataSource(invocation.getArgumentsAsArguments().get(0).getPath()) : null;
+		final IDataSource config = new PathDataSource(invocation.getArgumentsAsArguments().get(hasServer ? 1 : 0).getPath());
 		createIssues(server, config).entrySet().forEach(entry -> System.out.println(String.format("%1$s %2$s", entry.getValue(), entry.getKey())));
 		return IStandardCommand.SUCCESS;
 	}
