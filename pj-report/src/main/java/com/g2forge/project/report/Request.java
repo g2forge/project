@@ -30,6 +30,9 @@ public class Request {
 	protected final LocalDate end;
 
 	public ZoneId getZone(String user) {
-		return user == null ? ZoneId.systemDefault() : getUsers().get(user).getZone();
+		if (user == null) return ZoneId.systemDefault();
+		final WorkingHours workingHours = getUsers().get(user);
+		if (workingHours == null) throw new IllegalArgumentException("No working hours specified for user " + user);
+		return workingHours.getZone();
 	}
 }

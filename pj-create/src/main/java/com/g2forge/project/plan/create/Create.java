@@ -37,6 +37,8 @@ import com.g2forge.alexandria.command.command.IStandardCommand;
 import com.g2forge.alexandria.command.exit.IExit;
 import com.g2forge.alexandria.command.invocation.CommandInvocation;
 import com.g2forge.alexandria.java.core.error.HError;
+import com.g2forge.alexandria.java.function.ISupplier;
+import com.g2forge.alexandria.java.function.cache.FixedCachingSupplier;
 import com.g2forge.alexandria.java.io.dataaccess.IDataSource;
 import com.g2forge.alexandria.java.io.dataaccess.PathDataSource;
 import com.g2forge.alexandria.log.HLog;
@@ -165,7 +167,7 @@ public class Create implements IStandardCommand {
 
 	protected static Changes computeChanges(Server server, CreateConfig config) {
 		final SprintConfig sprintWithDefault = config.getSprintConfig() == null ? SprintConfig.getDEFAULT() : config.getSprintConfig().fallback(SprintConfig.getDEFAULT());
-		final SprintConfig sprintWithOffset = ((server == null) || (server.getSprintOffset() == null)) ? sprintWithDefault : sprintWithDefault.toBuilder().offset(sprintWithDefault.getOffset() + server.getSprintOffset()).build();
+		final SprintConfig sprintWithOffset = (server == null) ? sprintWithDefault : sprintWithDefault.toBuilder().offset(server.modifySprint(sprintWithDefault.getOffset())).build();
 
 		final Changes.ChangesBuilder retVal = Changes.builder();
 		final Set<String> disabledSummaries = config.getDisabledIssues().stream().map(CreateIssue::getSummary).collect(Collectors.toSet());
@@ -249,13 +251,6 @@ public class Create implements IStandardCommand {
 		final boolean dryrun = ProjectCreateFlag.DRYRUN.getAccessor().get();
 		HLog.getLogControl().setLogLevel(Level.INFO);
 		try (final ExtendedJiraRestClient client = JiraAPI.createFromPropertyInput(server == null ? null : server.getApi(), null).connect(true)) {
-			final Map<String, LinkType> linkTypes = new HashMap<>();
-			for (IssuelinksType linkType : client.getMetadataClient().getIssueLinkTypes().get()) {
-				linkTypes.put(linkType.getName(), new LinkType(linkType.getName(), false));
-				linkTypes.put(linkType.getInward(), new LinkType(linkType.getName(), true));
-				linkTypes.put(linkType.getOutward(), new LinkType(linkType.getName(), false));
-			}
-
 			final IssueRestClient issueClient = client.getIssueClient();
 			final Map<String, String> issues = new LinkedHashMap<>();
 			for (CreateIssue issue : changes.getIssues()) {
@@ -324,12 +319,21 @@ public class Create implements IStandardCommand {
 				}
 			}
 
-			if (!dryrun) for (LinkIssuesInput link : changes.getLinks()) {
-				final LinkType linkType = linkTypes.get(link.getLinkType());
-				final String from = issues.get(link.getFromIssueKey());
-				final String to = issues.getOrDefault(link.getToIssueKey(), link.getToIssueKey());
-				// TODO: Handle it when an issue we're linking wasn't created
-				issueClient.linkIssue(new LinkIssuesInput(linkType.isReverse() ? to : from, linkType.isReverse() ? from : to, linkType.getName(), link.getComment())).get();
+			if (!dryrun && !changes.getLinks().isEmpty()) {
+				final Map<String, LinkType> linkTypes = new HashMap<>();
+				for (IssuelinksType linkType : client.getMetadataClient().getIssueLinkTypes().get()) {
+					linkTypes.put(linkType.getName(), new LinkType(linkType.getName(), false));
+					linkTypes.put(linkType.getInward(), new LinkType(linkType.getName(), true));
+					linkTypes.put(linkType.getOutward(), new LinkType(linkType.getName(), false));
+				}
+
+				for (LinkIssuesInput link : changes.getLinks()) {
+					final LinkType linkType = linkTypes.get(link.getLinkType());
+					final String from = issues.get(link.getFromIssueKey());
+					final String to = issues.getOrDefault(link.getToIssueKey(), link.getToIssueKey());
+					// TODO: Handle it when an issue we're linking wasn't created
+					issueClient.linkIssue(new LinkIssuesInput(linkType.isReverse() ? to : from, linkType.isReverse() ? from : to, linkType.getName(), link.getComment())).get();
+				}
 			}
 
 			return issues;
