@@ -25,6 +25,7 @@ import org.slf4j.event.Level;
 
 import com.atlassian.jira.rest.client.api.IssueRestClient;
 import com.atlassian.jira.rest.client.api.domain.BasicComponent;
+import com.atlassian.jira.rest.client.api.domain.BasicUser;
 import com.atlassian.jira.rest.client.api.domain.ChangelogGroup;
 import com.atlassian.jira.rest.client.api.domain.ChangelogItem;
 import com.atlassian.jira.rest.client.api.domain.Comment;
@@ -181,14 +182,17 @@ public class Billing implements IStandardCommand {
 
 	protected final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy/MM/dd");
 
-	protected List<Change> computeChanges(ExtendedJiraRestClient client, Server server, Request request, IFunction1<User, String> userToFriendly, String issueKey, ZonedDateTime start, ZonedDateTime end) throws InterruptedException, ExecutionException {
+	protected final DateTimeFormatter DATE_FORMAT_FILENAME = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+
+	protected List<Change> computeChanges(ExtendedJiraRestClient client, Server server, Request request, IFunction1<BasicUser, String> userToFriendly, String issueKey, ZonedDateTime start, ZonedDateTime end) throws InterruptedException, ExecutionException {
 		final Issue issue = client.getIssueClient().getIssue(issueKey, HCollection.asList(IssueRestClient.Expandos.CHANGELOG)).get();
 		final List<ChangelogGroup> changelog = new ArrayList<>(HCollection.asListIterable(issue.getChangelog()));
 		for (Comment comment : issue.getComments()) {
 			final String body = comment.getBody();
 			final List<StatusAdjustment> adjustments = StatusAdjustment.parse(body);
 			if (!adjustments.isEmpty()) {
-				final ZoneId zone = request.getZone(comment.getAuthor().getName());
+
+				final ZoneId zone = request.getZone(userToFriendly.apply(comment.getAuthor()));
 				for (StatusAdjustment adjustment : adjustments) {
 					final ZonedDateTime when = adjustment.getWhen().atZone(zone);
 					changelog.add(new ChangelogGroup(comment.getAuthor(), convert(when), HCollection.asList(new ChangelogItem(FieldType.JIRA, KnownField.Status.getName(), adjustment.getFrom(), adjustment.getFrom(), adjustment.getTo(), adjustment.getTo()))));
@@ -208,11 +212,12 @@ public class Billing implements IStandardCommand {
 		return Change.toChanges(changelog, start, end, userToFriendly.apply(issue.getAssignee()), issue.getStatus().getName(), users);
 	}
 
-	protected List<Issue> findRelevantIssues(ExtendedJiraRestClient client, String jql, Collection<? extends String> users, LocalDate start, LocalDate end) throws InterruptedException, ExecutionException {
+	protected List<Issue> findRelevantIssues(ExtendedJiraRestClient client, String jql, Collection<? extends String> users, Map<String, String> userMap, LocalDate start, LocalDate end) throws InterruptedException, ExecutionException {
 		final List<Issue> retVal = new ArrayList<>();
 		for (String user : users) {
 			log.info("Finding issues for {}", user);
-			final String compositeJQL = String.format("issuekey IN updatedBy(%1$s, \"%2$s\", \"%3$s\")", user, start.format(DATE_FORMAT), end.format(DATE_FORMAT)) + ((jql == null) ? "" : (" AND " + jql));
+			final String username = (userMap == null) ? user : userMap.getOrDefault(user, user);
+			final String compositeJQL = String.format("issuekey IN updatedBy(%1$s, \"%2$s\", \"%3$s\")", username, start.format(DATE_FORMAT), end.format(DATE_FORMAT)) + ((jql == null) ? "" : (" AND " + jql));
 			final int desiredMax = 500;
 			int base = 0;
 			while (true) {
@@ -228,7 +233,7 @@ public class Billing implements IStandardCommand {
 		return retVal;
 	}
 
-	protected List<Change> examineIssue(final ExtendedJiraRestClient client, Server server, Request request, IPredicate1<String> isStatusBillable, IPredicate1<Object> isComponentBillable, IFunction1<User, String> userToFriendly, Issue issue, Bill.BillBuilder billBuilder) throws InterruptedException, ExecutionException {
+	protected List<Change> examineIssue(final ExtendedJiraRestClient client, Server server, Request request, IPredicate1<String> isStatusBillable, IPredicate1<Object> isComponentBillable, IFunction1<BasicUser, String> userToFriendly, Issue issue, Bill.BillBuilder billBuilder) throws InterruptedException, ExecutionException {
 		log.info("Examining {}", issue.getKey());
 		final Set<String> billableComponents = HCollection.asListIterable(issue.getComponents()).stream().map(BasicComponent::getName).distinct().filter(isComponentBillable).collect(Collectors.toSet());
 		if (billableComponents.isEmpty()) return null;
@@ -257,7 +262,7 @@ public class Billing implements IStandardCommand {
 		final IPredicate1<Object> isComponentBillable = HMatch.createPredicate(true, request.getBillableComponents());
 
 		final Map<String, String> userReverseMap = server.getUsers().entrySet().stream().collect(Collectors.toMap(Map.Entry::getValue, Map.Entry::getKey));
-		final IFunction1<User, String> userToFriendly = user -> {
+		final IFunction1<BasicUser, String> userToFriendly = user -> {
 			final String primaryKey = server.getUserPrimaryKey().getValue(user);
 			return userReverseMap.getOrDefault(primaryKey, primaryKey);
 		};
@@ -269,7 +274,7 @@ public class Billing implements IStandardCommand {
 			final Map<String, Issue> issues;
 			final Map<String, List<Change>> changes = new TreeMap<>();
 			{
-				final List<Issue> relevantIssues = findRelevantIssues(client, request.getJql(), request.getUsers().keySet(), request.getStart(), request.getEnd());
+				final List<Issue> relevantIssues = findRelevantIssues(client, request.getJql(), request.getUsers().keySet(), server.getUsers(), request.getStart(), request.getEnd());
 				issues = relevantIssues.stream().collect(Collectors.toMap(Issue::getKey, IFunction1.identity(), (i0, i1) -> i0));
 			}
 			log.info("Found: {}", issues.keySet().stream().collect(HCollector.joiningHuman()));
@@ -315,9 +320,15 @@ public class Billing implements IStandardCommand {
 					billLines.add(new BillLine(component, assignees, issue, summary, hours, ranges.toString().strip(), link));
 				}
 			}
-			final Path outputFile = Filename.replaceExtension(arguments.getRequest(), "csv");
-			log.info("Writing bill to {}", outputFile);
-			BillLine.getMapper().write(billLines, outputFile);
+
+			{
+
+				final Path outputDirectory = arguments.getRequest().getParent();
+				final String filename = Filename.fromPath(arguments.getRequest()).getPrefix().toString() + " (" + DATE_FORMAT_FILENAME.format(request.getStart()) + " to " + DATE_FORMAT_FILENAME.format(request.getEnd()) + ").csv";
+				final Path outputFile = outputDirectory.resolve(filename);
+				log.info("Writing bill to {}", outputFile);
+				BillLine.getMapper().write(billLines, outputFile);
+			}
 
 			log.info("Bill by user");
 			for (String user : bill.getUsers()) {
