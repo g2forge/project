@@ -33,6 +33,7 @@ import com.atlassian.jira.rest.client.api.domain.input.LinkIssuesInput;
 import com.atlassian.jira.rest.client.api.domain.input.TransitionInput;
 import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.databind.JsonMappingException;
+import com.g2forge.alexandria.annotations.service.Service;
 import com.g2forge.alexandria.command.command.IStandardCommand;
 import com.g2forge.alexandria.command.exit.IExit;
 import com.g2forge.alexandria.command.invocation.CommandInvocation;
@@ -46,6 +47,7 @@ import com.g2forge.gearbox.jira.ExtendedJiraRestClient;
 import com.g2forge.gearbox.jira.JiraAPI;
 import com.g2forge.gearbox.jira.fields.KnownField;
 import com.g2forge.project.core.HConfig;
+import com.g2forge.project.core.IProjectCommand;
 import com.g2forge.project.core.Server;
 import com.g2forge.project.plan.create.CreateIssue.CreateIssueBuilder;
 import com.google.common.base.Objects;
@@ -153,7 +155,8 @@ import lombok.Data;
  * </tbody>
  * </table>
  */
-public class Create implements IStandardCommand {
+@Service(IProjectCommand.class)
+public class Create implements IProjectCommand {
 	@Data
 	@Builder
 	@AllArgsConstructor

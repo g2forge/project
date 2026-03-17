@@ -35,6 +35,7 @@ import com.atlassian.jira.rest.client.api.domain.SearchResult;
 import com.atlassian.jira.rest.client.api.domain.User;
 import com.g2forge.alexandria.adt.associative.cache.Cache;
 import com.g2forge.alexandria.adt.associative.cache.NeverCacheEvictionPolicy;
+import com.g2forge.alexandria.annotations.service.Service;
 import com.g2forge.alexandria.command.command.IStandardCommand;
 import com.g2forge.alexandria.command.exit.IExit;
 import com.g2forge.alexandria.command.invocation.CommandInvocation;
@@ -45,6 +46,7 @@ import com.g2forge.alexandria.java.core.helpers.HCollector;
 import com.g2forge.alexandria.java.function.IFunction1;
 import com.g2forge.alexandria.java.function.IPredicate1;
 import com.g2forge.alexandria.java.function.builder.IBuilder;
+import com.g2forge.alexandria.java.io.dataaccess.PathDataSink;
 import com.g2forge.alexandria.java.io.dataaccess.PathDataSource;
 import com.g2forge.alexandria.log.HLog;
 import com.g2forge.alexandria.match.HMatch;
@@ -54,6 +56,7 @@ import com.g2forge.gearbox.jira.ExtendedJiraRestClient;
 import com.g2forge.gearbox.jira.JiraAPI;
 import com.g2forge.gearbox.jira.fields.KnownField;
 import com.g2forge.project.core.HConfig;
+import com.g2forge.project.core.IProjectCommand;
 import com.g2forge.project.core.Server;
 
 import lombok.AllArgsConstructor;
@@ -64,7 +67,8 @@ import lombok.Singular;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
-public class Billing implements IStandardCommand {
+@Service(IProjectCommand.class)
+public class Billing implements IProjectCommand {
 	@Data
 	@Builder(toBuilder = true)
 	@AllArgsConstructor
@@ -327,7 +331,7 @@ public class Billing implements IStandardCommand {
 				final String filename = Filename.fromPath(arguments.getRequest()).getPrefix().toString() + " (" + DATE_FORMAT_FILENAME.format(request.getStart()) + " to " + DATE_FORMAT_FILENAME.format(request.getEnd()) + ").csv";
 				final Path outputFile = outputDirectory.resolve(filename);
 				log.info("Writing bill to {}", outputFile);
-				BillLine.getMapper().write(billLines, outputFile);
+				BillLine.getMapper().write(billLines, new PathDataSink(outputFile));
 			}
 
 			log.info("Bill by user");

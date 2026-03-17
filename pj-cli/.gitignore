@@ -1,0 +1,8 @@
+/.project
+/.classpath
+/.settings/
+/target/
+/bulldozer-temp.json
+/bulldozer-state.json
+/.factorypath
+/dependency-reduced-pom.xml

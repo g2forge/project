@@ -21,5 +21,6 @@
 		<module>pj-create</module>
 		<module>pj-plan</module>
 		<module>pj-report</module>
+		<module>pj-cli</module>
 	</modules>
 </project>
