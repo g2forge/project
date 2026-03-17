@@ -22,14 +22,29 @@ public class Server implements IFieldConfig {
 
 	protected final Integer sprintOffset;
 
+	protected final Map<Integer, Integer> sprintMap;
+
 	@Singular
 	protected final Map<String, String> users;
 
-	protected final UserPrimaryKey userPrimaryKey;
 
+	protected final UserPrimaryKey userPrimaryKey;
 	protected final JiraAPI api;
 
 	public UserPrimaryKey getUserPrimaryKey() {
 		return userPrimaryKey == null ? UserPrimaryKey.NAME : userPrimaryKey;
+	}
+
+	public Integer modifySprint(Integer sprint) {
+		// No matter how things are configured, this is the correct result
+		if (sprint == null) return null;
+
+		if ((getSprintOffset() != null) && (getSprintMap() != null)) throw new IllegalArgumentException("Both offset and map are non-null, please specify either a map from sprint numbers to IDs, or an offset!");
+
+		if (getSprintMap() != null) {
+			final Integer retVal = getSprintMap().get(sprint);
+			if (retVal == null) throw new IllegalArgumentException(String.format("Sprint number %1$d was not mapped, please update your sprint number to ID map!", sprint));
+			return retVal;
+		} else return sprint + getSprintOffset();
 	}
 }
