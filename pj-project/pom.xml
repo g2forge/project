@@ -10,13 +10,13 @@
 	<parent>
 		<groupId>com.g2forge.alexandria</groupId>
 		<artifactId>ax-project</artifactId>
-		<version>0.0.21-SNAPSHOT</version>
+		<version>0.0.21</version>
 		<relativePath />
 	</parent>
 
 	<properties>
-		<alexandria.version>0.0.21-SNAPSHOT</alexandria.version>
-		<gearbox.version>0.0.12-SNAPSHOT</gearbox.version>
+		<alexandria.version>0.0.21</alexandria.version>
+		<gearbox.version>0.0.12</gearbox.version>
 
 		<project.organization>g2forge</project.organization>
 		<project.name>project</project.name>
